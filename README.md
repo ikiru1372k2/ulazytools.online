@@ -8,7 +8,7 @@ Local development workspace for the `ulazytools.online` repository.
 2. Run the app: `npm run dev`, then open `http://localhost:3000`
 3. Quality checks: `npm run verify` (typecheck, lint, build), or run `npm run lint`, `npm run format:check`, `npm run typecheck`, and `npm run build` separately
 
-`npm run typecheck` runs `tsc --noEmit` with incremental state disabled so local verification does not depend on leftover `.tsbuildinfo`. After `npm run dev` or `npm run build`, `.next/types` is picked up for Next.js route typing when present.
+`npm run typecheck` runs a dedicated TypeScript project with incremental state disabled so local verification does not depend on leftover `.tsbuildinfo` or generated `.next/types` files.
 
 ## Local auth setup
 

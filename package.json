@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "verify": "npm run typecheck && npm run lint && npm run build",
-    "typecheck": "tsc --noEmit --incremental false",
+    "typecheck": "tsc --noEmit --incremental false --project tsconfig.typecheck.json",
     "prisma:generate": "dotenv -e .env.local -- prisma generate",
     "prisma:validate": "dotenv -e .env.local -- prisma validate",
     "prisma:studio": "dotenv -e .env.local -- prisma studio",
