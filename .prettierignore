@@ -1,0 +1,13 @@
+.next/
+node_modules/
+.env
+.env.*
+!.env.example
+pnpm-lock.yaml
+package-lock.json
+*.tsbuildinfo
+coverage/
+dist/
+build/
+out/
+prisma/migrations/
