@@ -32,6 +32,12 @@ The middleware matcher currently covers `/dashboard` only. If you add more clean
 
 For non-local deployments, also set `AUTH_URL` (or `NEXTAUTH_URL`) to the deployed origin so OAuth callbacks resolve correctly outside `http://localhost:3000`.
 
+## Local storage setup
+
+Issue `#103` adds a storage helper built on the AWS S3 SDK. Local development uses MinIO today, while the same helper can later target AWS S3-compatible storage by changing env values.
+
+Short presigned URL TTLs depend on sane local clock sync. If a presigned URL fails unexpectedly, verify your machine time is correct before debugging the helper.
+
 ## Local infrastructure
 
 Start the local development services with Docker Compose:
