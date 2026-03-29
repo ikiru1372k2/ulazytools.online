@@ -7,10 +7,16 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "verify": "npm run typecheck && npm run lint && npm run build",
+    "typecheck": "tsc --noEmit --incremental false",
+    "prisma:generate": "dotenv -e .env.local -- prisma generate",
+    "prisma:validate": "dotenv -e .env.local -- prisma validate",
+    "prisma:studio": "dotenv -e .env.local -- prisma studio",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@prisma/client": "^6.16.3",
     "next": "^14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -20,10 +26,12 @@
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
     "autoprefixer": "^10.4.21",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.2.35",
     "postcss": "^8.5.6",
     "prettier": "^3.8.1",
+    "prisma": "^6.16.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3"
   }
