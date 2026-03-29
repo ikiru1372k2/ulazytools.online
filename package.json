@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "verify": "npm run typecheck && npm run lint && npm run build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental false --project tsconfig.typecheck.json",
     "prisma:generate": "dotenv -e .env.local -- prisma generate",
     "prisma:validate": "dotenv -e .env.local -- prisma validate",
     "prisma:studio": "dotenv -e .env.local -- prisma studio",
@@ -16,8 +16,10 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@auth/prisma-adapter": "^2.11.1",
     "@prisma/client": "^6.16.3",
     "next": "^14.2.35",
+    "next-auth": "^5.0.0-beta.30",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

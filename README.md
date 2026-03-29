@@ -8,7 +8,29 @@ Local development workspace for the `ulazytools.online` repository.
 2. Run the app: `npm run dev`, then open `http://localhost:3000`
 3. Quality checks: `npm run verify` (typecheck, lint, build), or run `npm run lint`, `npm run format:check`, `npm run typecheck`, and `npm run build` separately
 
-`npm run typecheck` runs `tsc --noEmit` against `src/` and root `*.ts`/`*.tsx` only; it does not scan arbitrary `.next` build output. After `npm run dev` or `npm run build`, `.next/types` is picked up for Next.js route typing when present.
+`npm run typecheck` runs a dedicated TypeScript project with incremental state disabled so local verification does not depend on leftover `.tsbuildinfo` or generated `.next/types` files.
+
+## Local auth setup
+
+Issue `#102` adds Google sign-in with Auth.js and Prisma-backed sessions.
+
+After copying `.env.local.example` to `.env.local`, fill in:
+
+- `AUTH_SECRET`
+- `AUTH_GOOGLE_ID`
+- `AUTH_GOOGLE_SECRET`
+
+For the Google OAuth app, register this local callback URL exactly:
+
+```text
+http://localhost:3000/api/auth/callback/google
+```
+
+The public marketing page stays at `/`. The authenticated app area starts at `/dashboard`, and unauthenticated access redirects to `/login`.
+
+The middleware matcher currently covers `/dashboard` only. If you add more clean-URL protected routes later, add them to `src/middleware.ts` as well so they get the same early redirect behavior.
+
+For non-local deployments, also set `AUTH_URL` (or `NEXTAUTH_URL`) to the deployed origin so OAuth callbacks resolve correctly outside `http://localhost:3000`.
 
 ## Local infrastructure
 
@@ -95,7 +117,7 @@ If you hit a port collision, remap the host port in a compose override or local 
 - `src/server/`: server-only code, backend orchestration, and infrastructure concerns.
 - `src/types/`: shared project types that are not tied to a single feature folder.
 - `src/workers/`: background job processors and worker runtime code.
-- `prisma/`: future Prisma schema, migrations, and seed assets.
+- `prisma/`: schema, migrations, and seed assets.
 
 ## Import conventions
 
