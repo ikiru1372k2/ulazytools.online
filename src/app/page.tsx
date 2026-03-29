@@ -22,8 +22,8 @@ export default function HomePage() {
               A clean web shell for the next phase of document tooling.
             </h1>
             <p className="max-w-2xl text-lg leading-8 text-slate-600">
-              This starter app establishes the marketing surface, styling pipeline,
-              and App Router structure before PDF workflows land.
+              This starter app establishes the marketing surface, styling
+              pipeline, and App Router structure before PDF workflows land.
             </p>
           </div>
           <div className="flex flex-wrap gap-4">
