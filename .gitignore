@@ -18,6 +18,9 @@ pnpm-debug.log*
 
 # Dependencies / builds
 node_modules/
+.next/
+out/
+*.tsbuildinfo
 dist/
 build/
 coverage/
