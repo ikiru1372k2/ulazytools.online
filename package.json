@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "ci:smoke": "node scripts/ci-runtime-smoke.mjs",
+    "test": "node tests/run-tests.mjs",
     "worker:dev": "dotenv -e .env.local -- tsx watch src/workers/pdfWorker.ts",
     "verify": "npm run typecheck && npm run lint && npm run build",
     "typecheck": "tsc --noEmit --incremental false --project tsconfig.typecheck.json",
