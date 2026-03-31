@@ -4,6 +4,9 @@
     "next-env.d.ts",
     "*.ts",
     "*.tsx",
+    "jest.setup.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
     "scripts/**/*.ts"
