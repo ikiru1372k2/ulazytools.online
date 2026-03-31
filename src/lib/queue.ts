@@ -2,6 +2,9 @@ import "server-only";
 
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis, { type RedisOptions } from "ioredis";
+import { getQueueEnv } from "@/lib/env";
+
+const queueEnv = getQueueEnv();
 
 export const PDF_QUEUE_NAME = "pdf-jobs";
 export const PDF_JOB_TYPES = ["process"] as const;
@@ -19,16 +22,6 @@ const globalForQueue = globalThis as typeof globalThis & {
   pdfQueueConnection?: IORedis;
 };
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`Missing required queue environment variable: ${name}`);
-  }
-
-  return value;
-}
-
 function getRedisOptions(): RedisOptions {
   return {
     lazyConnect: true,
@@ -37,7 +30,7 @@ function getRedisOptions(): RedisOptions {
 }
 
 export function getRedisUrl() {
-  return getRequiredEnv("REDIS_URL");
+  return queueEnv.REDIS_URL;
 }
 
 export function createRedisConnection() {

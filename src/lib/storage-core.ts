@@ -7,6 +7,9 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { getStorageEnv } from "@/lib/env";
+
+const storageEnv = getStorageEnv();
 
 type UploadBody = Buffer | Uint8Array;
 
@@ -33,26 +36,15 @@ export type StoredObject = {
   lastModified?: Date;
 };
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`Missing required storage environment variable: ${name}`);
-  }
-
-  return value;
-}
-
 function getStorageConfig(): StorageConfig {
-  const endpoint = process.env.S3_ENDPOINT?.trim() || undefined;
-  const forcePathStyle =
-    process.env.S3_FORCE_PATH_STYLE === "true" || Boolean(endpoint);
+  const endpoint = storageEnv.S3_ENDPOINT;
+  const forcePathStyle = storageEnv.S3_FORCE_PATH_STYLE || Boolean(endpoint);
 
   return {
-    bucket: getRequiredEnv("S3_BUCKET"),
+    bucket: storageEnv.S3_BUCKET,
     endpoint,
     forcePathStyle,
-    region: getRequiredEnv("S3_REGION"),
+    region: storageEnv.S3_REGION,
   };
 }
 
@@ -61,8 +53,8 @@ const storageConfig = getStorageConfig();
 // MinIO is the default local target, but this stays AWS S3-compatible via env config.
 const storageClient = new S3Client({
   credentials: {
-    accessKeyId: getRequiredEnv("S3_ACCESS_KEY_ID"),
-    secretAccessKey: getRequiredEnv("S3_SECRET_ACCESS_KEY"),
+    accessKeyId: storageEnv.S3_ACCESS_KEY_ID,
+    secretAccessKey: storageEnv.S3_SECRET_ACCESS_KEY,
   },
   endpoint: storageConfig.endpoint,
   forcePathStyle: storageConfig.forcePathStyle,
