@@ -38,6 +38,30 @@ Issue `#103` adds a storage helper built on the AWS S3 SDK. Local development us
 
 Short presigned URL TTLs depend on sane local clock sync. If a presigned URL fails unexpectedly, verify your machine time is correct before debugging the helper.
 
+## Security headers baseline
+
+Issue `#109` adds baseline response hardening through `next.config.mjs`.
+
+Current defaults:
+
+- `Content-Security-Policy`
+- `Permissions-Policy`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Strict-Transport-Security` in production only
+
+The CSP is intentionally looser in development so Next.js dev tooling keeps working. Production uses a self-first baseline, but it still keeps Next.js-compatible inline script support until we adopt a nonce- or hash-based CSP follow-up. When PDF.js, external viewers, or CDNs are introduced later, relax CSP deliberately in targeted directives rather than weakening it globally.
+
+The most likely future CSP changes will be in:
+
+- `connect-src`
+- `img-src` / `media-src`
+- `worker-src`
+- external `script-src`, `style-src`, or `font-src`
+
+`Strict-Transport-Security` is enabled only in production and does not currently opt into HSTS preload.
+
 ## Local infrastructure
 
 Start the local development services with Docker Compose:
