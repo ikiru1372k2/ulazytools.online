@@ -66,19 +66,23 @@ model VerificationToken {
 model FileObject {
   id           String    @id @default(cuid())
   userId       String?
+  guestId      String?
   bucket       String
   objectKey    String    @unique
   originalName String
   mimeType     String
   sizeBytes    BigInt
   checksum     String?
+  status       FileObjectStatus @default(PENDING_UPLOAD)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   jobs         Job[]
 
   @@index([userId])
+  @@index([guestId])
   @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 model Job {
@@ -122,4 +126,10 @@ enum JobStatus {
   SUCCEEDED
   FAILED
   CANCELED
+}
+
+enum FileObjectStatus {
+  PENDING_UPLOAD
+  READY
+  FAILED
 }

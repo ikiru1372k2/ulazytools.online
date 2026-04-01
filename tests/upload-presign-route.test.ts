@@ -1,3 +1,5 @@
+export {};
+
 const auth = jest.fn();
 const create = jest.fn();
 const info = jest.fn();
@@ -116,8 +118,10 @@ describe("/api/upload/presign", () => {
         data: expect.objectContaining({
           bucket: "test-bucket",
           checksum: null,
+          guestId: null,
           mimeType: "application/pdf",
           originalName: "report.pdf",
+          status: "PENDING_UPLOAD",
           userId: "user-123",
         }),
       })
@@ -161,6 +165,15 @@ describe("/api/upload/presign", () => {
 
     expect(response.status).toBe(200);
     expect(response.cookieCalls).toHaveLength(1);
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          guestId: expect.any(String),
+          status: "PENDING_UPLOAD",
+          userId: null,
+        }),
+      })
+    );
   });
 
   it("returns 400 for invalid upload payloads", async () => {
