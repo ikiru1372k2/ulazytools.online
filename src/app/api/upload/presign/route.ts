@@ -27,6 +27,8 @@ import {
   validateUpload,
 } from "@/server/uploads/presignPolicy";
 
+const FILE_OBJECT_PENDING_UPLOAD = "PENDING_UPLOAD";
+
 function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
   if (forwardedFor) {
@@ -39,10 +41,7 @@ function getClientIp(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
-  const userId =
-    session?.user && "id" in session.user && typeof session.user.id === "string"
-      ? session.user.id
-      : undefined;
+  const userId = session?.user?.id;
   const guestIdentity = resolveGuestIdentity(
     request.cookies.get(GUEST_ID_COOKIE)?.value
   );
@@ -68,10 +67,12 @@ export async function POST(request: NextRequest) {
       data: {
         bucket: getStorageBucket(),
         checksum: null,
+        guestId: userId ? null : guestIdentity.guestId,
         mimeType: body.contentType,
         objectKey,
         originalName: body.filename,
         sizeBytes: BigInt(body.sizeBytes),
+        status: FILE_OBJECT_PENDING_UPLOAD,
         userId: userId ?? null,
       },
       select: {
@@ -91,7 +92,6 @@ export async function POST(request: NextRequest) {
         fileId: fileObject.id,
         guestId: userId ? undefined : guestIdentity.guestId,
         mimeType: body.contentType,
-        objectKey: fileObject.objectKey,
         sizeBytes: body.sizeBytes,
       },
       "Created presigned upload"

@@ -11,6 +11,14 @@ describe("storage presign helpers", () => {
     process.env.PRESIGN_EXPIRES_SECONDS = "60";
 
     jest.doMock("@aws-sdk/client-s3", () => {
+      class HeadObjectCommand {
+        input: unknown;
+
+        constructor(input: unknown) {
+          this.input = input;
+        }
+      }
+
       class PutObjectCommand {
         input: unknown;
 
@@ -20,10 +28,22 @@ describe("storage presign helpers", () => {
       }
 
       class S3Client {
+        send = jest.fn(async (command: unknown) => {
+          if (command instanceof HeadObjectCommand) {
+            return {
+              ContentLength: 1234,
+              ETag: '"etag-123"',
+            };
+          }
+
+          return {};
+        });
+
         constructor(_input: unknown) {}
       }
 
       return {
+        HeadObjectCommand,
         PutObjectCommand,
         S3Client,
       };
@@ -53,5 +73,14 @@ describe("storage presign helpers", () => {
     await expect(
       presignPut("uploads/test.pdf", "application/pdf", 0)
     ).rejects.toThrow(/finite positive ttlSeconds/i);
+  });
+
+  it("returns normalized metadata from HEAD object", async () => {
+    const { getObjectMetadata } = await import("@/lib/storage");
+
+    await expect(getObjectMetadata("uploads/test.pdf")).resolves.toEqual({
+      etag: "etag-123",
+      size: BigInt(1234),
+    });
   });
 });

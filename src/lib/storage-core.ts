@@ -43,6 +43,18 @@ export type StoredObject = {
   lastModified?: Date;
 };
 
+export type ObjectMetadata = {
+  etag?: string;
+  size?: bigint;
+};
+
+export class StorageObjectNotFoundError extends Error {
+  constructor(key: string) {
+    super(`Storage object "${key}" was not found`);
+    this.name = "StorageObjectNotFoundError";
+  }
+}
+
 function getStorageConfig(): StorageConfig {
   const endpoint = storageEnv.S3_ENDPOINT;
   const forcePathStyle = storageEnv.S3_FORCE_PATH_STYLE || Boolean(endpoint);
@@ -218,6 +230,52 @@ export function getStorageBucket() {
   return storageConfig.bucket;
 }
 
+function isNotFoundStorageError(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    ("name" in error || "$metadata" in error)
+  ) {
+    const maybeError = error as {
+      $metadata?: { httpStatusCode?: number };
+      name?: string;
+    };
+
+    return (
+      maybeError.name === "NotFound" ||
+      maybeError.name === "NoSuchKey" ||
+      maybeError.$metadata?.httpStatusCode === 404
+    );
+  }
+
+  return false;
+}
+
+export async function getObjectMetadata(key: string): Promise<ObjectMetadata> {
+  try {
+    const response = await storageClient.send(
+      new HeadObjectCommand({
+        Bucket: storageConfig.bucket,
+        Key: key,
+      })
+    );
+
+    return {
+      etag: response.ETag?.replace(/"/g, ""),
+      size:
+        typeof response.ContentLength === "number"
+          ? BigInt(response.ContentLength)
+          : undefined,
+    };
+  } catch (error) {
+    if (isNotFoundStorageError(error)) {
+      throw new StorageObjectNotFoundError(key);
+    }
+
+    throw error;
+  }
+}
+
 export async function remove(key: string) {
   await storageClient.send(
     new DeleteObjectCommand({
@@ -229,33 +287,12 @@ export async function remove(key: string) {
 
 export async function exists(key: string) {
   try {
-    await storageClient.send(
-      new HeadObjectCommand({
-        Bucket: storageConfig.bucket,
-        Key: key,
-      })
-    );
+    await getObjectMetadata(key);
     return true;
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      ("name" in error || "$metadata" in error)
-    ) {
-      const maybeError = error as {
-        $metadata?: { httpStatusCode?: number };
-        name?: string;
-      };
-
-      if (
-        maybeError.name === "NotFound" ||
-        maybeError.name === "NoSuchKey" ||
-        maybeError.$metadata?.httpStatusCode === 404
-      ) {
-        return false;
-      }
+    if (error instanceof StorageObjectNotFoundError) {
+      return false;
     }
-
     throw error;
   }
 }
