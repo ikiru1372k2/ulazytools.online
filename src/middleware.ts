@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import {
+  getOrCreateRequestId,
+  normalizeRequestId,
+  REQUEST_ID_HEADER,
+} from "@/lib/request-id";
+
 function hasSessionCookie(request: NextRequest) {
   return (
     request.cookies.has("authjs.session-token") ||
@@ -11,17 +17,43 @@ function hasSessionCookie(request: NextRequest) {
 }
 
 export default function middleware(req: NextRequest) {
+  const requestId = getOrCreateRequestId(
+    normalizeRequestId(req.headers.get(REQUEST_ID_HEADER))
+  );
+  const headers = new Headers(req.headers);
+  headers.set(REQUEST_ID_HEADER, requestId);
+
+  if (!req.nextUrl.pathname.startsWith("/dashboard")) {
+    const response = NextResponse.next({
+      request: {
+        headers,
+      },
+    });
+
+    response.headers.set(REQUEST_ID_HEADER, requestId);
+    return response;
+  }
+
   if (hasSessionCookie(req)) {
-    return NextResponse.next();
+    const response = NextResponse.next({
+      request: {
+        headers,
+      },
+    });
+
+    response.headers.set(REQUEST_ID_HEADER, requestId);
+    return response;
   }
 
   const loginUrl = new URL("/login", req.nextUrl.origin);
   loginUrl.searchParams.set("next", req.nextUrl.pathname);
-  return NextResponse.redirect(loginUrl);
+  const response = NextResponse.redirect(loginUrl);
+  response.headers.set(REQUEST_ID_HEADER, requestId);
+  return response;
 }
 
 export const config = {
-  // Keep this matcher aligned with each clean-URL protected route we add.
-  // The authoritative auth check still happens in the protected server layout.
-  matcher: ["/dashboard/:path*"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|.*\\.[^/]+$).*)",
+  ],
 };

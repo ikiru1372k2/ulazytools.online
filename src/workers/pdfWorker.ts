@@ -1,6 +1,7 @@
 import { Worker, type Job as BullJob } from "bullmq";
 
 import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logger";
 import {
   PDF_QUEUE_NAME,
   createRedisConnection,
@@ -27,6 +28,9 @@ type LifecycleEvent = {
 
 const workerConnection = createRedisConnection();
 let isShuttingDown = false;
+const workerLogger = createLogger({
+  queue: PDF_QUEUE_NAME,
+});
 
 function clamp(value: string, maxLength: number) {
   return value.length <= maxLength ? value : value.slice(0, maxLength);
@@ -214,29 +218,51 @@ async function markFailedSafely(jobId: string, error: unknown) {
   try {
     await markFailed(jobId, error);
   } catch (markFailedError) {
-    console.error(
-      `[pdfWorker] failed to persist FAILED state for ${jobId}`,
-      markFailedError
+    createLogger({ jobId, queue: PDF_QUEUE_NAME }).error(
+      { err: markFailedError },
+      "Failed to persist job FAILED state"
     );
   }
 }
 
 async function processQueueJob(job: BullJob<PdfJobPayload>) {
-  console.log(`[pdfWorker] picked up ${job.id} (${job.name})`);
+  const log = createLogger({
+    jobId: job.data.jobId,
+    queue: PDF_QUEUE_NAME,
+    requestId: job.data.requestId,
+  });
+
+  log.info(
+    {
+      bullJobId: job.id,
+      queueJobType: job.name,
+    },
+    "Picked up PDF queue job"
+  );
 
   await markRunning(job.data.jobId, job.data);
 
   try {
     const result = await processPdfJob(job.data);
+    const completedLog = createLogger({
+      jobId: job.data.jobId,
+      queue: PDF_QUEUE_NAME,
+      requestId: job.data.requestId,
+      userId: result.userId,
+    });
 
     await markSucceeded(job.data.jobId, job.data, result.outputKey);
 
-    console.log(
-      `[pdfWorker] completed ${job.data.jobId} -> ${result.outputKey}`
+    completedLog.info(
+      {
+        outputKey: result.outputKey,
+      },
+      "Completed PDF queue job"
     );
 
     return result;
   } catch (error) {
+    log.error({ err: error }, "PDF queue job failed");
     await markFailedSafely(job.data.jobId, error);
     throw error;
   }
@@ -248,20 +274,36 @@ const worker = new Worker<PdfJobPayload>(PDF_QUEUE_NAME, processQueueJob, {
 });
 
 worker.on("ready", () => {
-  console.log(`[pdfWorker] listening on queue "${PDF_QUEUE_NAME}"`);
+  workerLogger.info('Listening for PDF jobs');
 });
 
 worker.on("completed", (job) => {
-  console.log(`[pdfWorker] BullMQ marked ${job.id} as completed`);
+  createLogger({
+    jobId: job.data.jobId,
+    queue: PDF_QUEUE_NAME,
+    requestId: job.data.requestId,
+  }).info(
+    {
+      bullJobId: job.id,
+    },
+    "BullMQ marked job as completed"
+  );
 });
 
 worker.on("failed", (job, error) => {
   const details = getErrorDetails(error);
 
-  console.error(
-    `[pdfWorker] BullMQ marked ${job?.id ?? "unknown"} as failed: ${
-      details.message
-    }`
+  createLogger({
+    jobId: job?.data.jobId,
+    queue: PDF_QUEUE_NAME,
+    requestId: job?.data.requestId,
+  }).error(
+    {
+      bullJobId: job?.id,
+      errorCode: details.code,
+      errorMessage: details.message,
+    },
+    "BullMQ marked job as failed"
   );
 });
 
@@ -271,13 +313,19 @@ async function shutdown(resources: ManagedResource[], signal: string) {
   }
 
   isShuttingDown = true;
-  console.log(`[pdfWorker] received ${signal}, shutting down`);
+  workerLogger.info({ signal }, "Shutting down PDF worker");
 
   for (const resource of resources) {
     try {
       await resource.close();
     } catch (error) {
-      console.error(`[pdfWorker] failed to close ${resource.name}`, error);
+      workerLogger.error(
+        {
+          err: error,
+          resource: resource.name,
+        },
+        "Failed to close worker resource cleanly"
+      );
     }
   }
 
