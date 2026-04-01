@@ -11,6 +11,8 @@ describe("server env schema", () => {
       DIRECT_URL: "postgresql://user:pass@localhost:5432/ulazytools",
       NODE_ENV: "test",
       REDIS_URL: "redis://localhost:6379",
+      MAX_UPLOAD_MB: "10",
+      PRESIGN_EXPIRES_SECONDS: "60",
       S3_ACCESS_KEY_ID: "test-access-key",
       S3_BUCKET: "test-bucket",
       S3_ENDPOINT: "http://localhost:9000",
@@ -30,11 +32,13 @@ describe("server env schema", () => {
   });
 
   it("parses the scoped env shapes", async () => {
-    const { getAuthEnv, getQueueEnv, getStorageEnv } = await import("@/lib/env");
+    const { getAuthEnv, getQueueEnv, getStorageEnv, getUploadEnv } =
+      await import("@/lib/env");
 
     expect(getAuthEnv().AUTH_GOOGLE_ID).toBe("test-google-client-id");
     expect(getQueueEnv().REDIS_URL).toBe("redis://localhost:6379");
     expect(getStorageEnv().S3_FORCE_PATH_STYLE).toBe(true);
+    expect(getUploadEnv().MAX_UPLOAD_MB).toBe(10);
   });
 
   it("normalizes optional URLs and boolean false values", async () => {
@@ -46,11 +50,13 @@ describe("server env schema", () => {
       S3_FORCE_PATH_STYLE: "false",
     } as NodeJS.ProcessEnv;
 
-    const { getAuthEnv, getStorageEnv } = await import("@/lib/env");
+    const { getAuthEnv, getStorageEnv, getUploadEnv } =
+      await import("@/lib/env");
 
     expect(getAuthEnv().AUTH_URL).toBeUndefined();
     expect(getStorageEnv().S3_ENDPOINT).toBeUndefined();
     expect(getStorageEnv().S3_FORCE_PATH_STYLE).toBe(false);
+    expect(getUploadEnv().PRESIGN_EXPIRES_SECONDS).toBe(60);
   });
 
   it("supports NEXTAUTH secret aliasing", async () => {

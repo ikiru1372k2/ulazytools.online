@@ -28,6 +28,13 @@ export type UploadResult = {
   size: number;
 };
 
+export type PresignedUploadResult = {
+  headers: {
+    "Content-Type": string;
+  };
+  uploadUrl: string;
+};
+
 export type StoredObject = {
   body: NonNullable<GetObjectCommandOutput["Body"]>;
   contentLength?: number;
@@ -171,6 +178,44 @@ export async function presignGet(key: string, ttlSeconds: number) {
     }),
     { expiresIn }
   );
+}
+
+export async function presignPut(
+  key: string,
+  contentType: string,
+  ttlSeconds: number
+): Promise<PresignedUploadResult> {
+  const normalizedContentType = contentType.trim();
+
+  if (!normalizedContentType) {
+    throw new Error("presignPut requires a non-empty contentType");
+  }
+
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
+    throw new Error("presignPut requires a finite positive ttlSeconds");
+  }
+
+  const expiresIn = Math.min(Math.floor(ttlSeconds), 7 * 24 * 60 * 60);
+  const uploadUrl = await getSignedUrl(
+    storageClient,
+    new PutObjectCommand({
+      Bucket: storageConfig.bucket,
+      ContentType: normalizedContentType,
+      Key: key,
+    }),
+    { expiresIn }
+  );
+
+  return {
+    headers: {
+      "Content-Type": normalizedContentType,
+    },
+    uploadUrl,
+  };
+}
+
+export function getStorageBucket() {
+  return storageConfig.bucket;
 }
 
 export async function remove(key: string) {
