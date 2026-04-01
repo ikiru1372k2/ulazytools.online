@@ -58,7 +58,7 @@ export async function processPdfJob(
     userId: dbJob.userId,
   }).info(
     {
-      inputRef: dbJob.inputRef ?? "n/a",
+      hasInputRef: Boolean(dbJob.inputRef),
       jobType: payload.type,
     },
     "Stub processing PDF job"

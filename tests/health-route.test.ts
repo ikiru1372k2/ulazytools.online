@@ -1,3 +1,16 @@
+jest.mock("next/server", () => ({
+  NextResponse: {
+    json(body: unknown) {
+      return {
+        async json() {
+          return body;
+        },
+        status: 200,
+      };
+    },
+  },
+}));
+
 describe("/api/health", () => {
   beforeEach(() => {
     jest.resetModules();
@@ -5,8 +18,11 @@ describe("/api/health", () => {
       "pino",
       () => {
         const info = jest.fn();
-        const child = jest.fn(() => ({ child, info }));
-        const instance = { child, info };
+        const instance = {
+          child: jest.fn(),
+          info,
+        };
+        instance.child.mockReturnValue(instance);
         const pino = jest.fn(() => instance);
         return { __esModule: true, default: pino };
       },
@@ -15,17 +31,14 @@ describe("/api/health", () => {
   });
 
   it("returns ok and echoes the request ID", async () => {
-    const { NextRequest } = await import("next/server");
     const { GET } = await import("@/app/api/health/route");
 
     const response = await GET(
-      new NextRequest(
-        new Request("https://example.com/api/health", {
-          headers: {
-            "x-request-id": "health-123",
-          },
-        })
-      )
+      {
+        headers: new Headers({
+          "x-request-id": "health-123",
+        }),
+      } as never
     );
 
     expect(response.status).toBe(200);

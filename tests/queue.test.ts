@@ -2,6 +2,8 @@ describe("pdf queue payload normalization", () => {
   beforeEach(() => {
     jest.resetModules();
     process.env.REDIS_URL = "redis://localhost:6379";
+    jest.doMock("bullmq", () => ({ Queue: jest.fn() }), { virtual: true });
+    jest.doMock("ioredis", () => jest.fn(), { virtual: true });
   });
 
   it("requires a non-empty job ID", async () => {

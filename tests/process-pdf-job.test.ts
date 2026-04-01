@@ -12,8 +12,12 @@ describe("processPdfJob", () => {
     jest.doMock(
       "pino",
       () => {
-        const child = jest.fn(() => ({ child, error, info }));
-        const instance = { child, error, info };
+        const instance = {
+          child: jest.fn(),
+          error,
+          info,
+        };
+        instance.child.mockReturnValue(instance);
         const pino = jest.fn(() => instance);
         return { __esModule: true, default: pino };
       },
@@ -52,7 +56,7 @@ describe("processPdfJob", () => {
 
     expect(info).toHaveBeenCalledWith(
       {
-        inputRef: "uploads/2026/04/job-123/input.pdf",
+        hasInputRef: true,
         jobType: "process",
       },
       "Stub processing PDF job"

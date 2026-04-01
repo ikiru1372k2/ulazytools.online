@@ -4,8 +4,11 @@ describe("logger helpers", () => {
     jest.doMock(
       "pino",
       () => {
-        const child = jest.fn(() => ({ child, info: jest.fn() }));
-        const instance = { child, info: jest.fn() };
+        const instance = {
+          child: jest.fn(),
+          info: jest.fn(),
+        };
+        instance.child.mockReturnValue(instance);
         const pino = jest.fn(() => instance);
         return { __esModule: true, default: pino };
       },
