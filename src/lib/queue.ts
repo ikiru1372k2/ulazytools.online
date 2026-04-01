@@ -3,6 +3,7 @@ import "server-only";
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis, { type RedisOptions } from "ioredis";
 import { getQueueEnv } from "@/lib/env";
+import { normalizeRequestId } from "@/lib/request-id";
 
 const queueEnv = getQueueEnv();
 
@@ -14,6 +15,7 @@ export type PdfJobType = (typeof PDF_JOB_TYPES)[number];
 
 export type PdfJobPayload = {
   jobId: string;
+  requestId?: string;
   type: PdfJobType;
 };
 
@@ -68,9 +70,11 @@ export function getDefaultPdfJobOptions(): JobsOptions {
   };
 }
 
-function normalizePdfJobPayload(payload: PdfJobPayload): PdfJobPayload {
+export function normalizePdfJobPayload(payload: PdfJobPayload): PdfJobPayload {
+  const normalizedRequestId = normalizeRequestId(payload.requestId);
   const normalizedPayload = {
     jobId: payload.jobId.trim(),
+    requestId: normalizedRequestId ? normalizedRequestId : undefined,
     type: payload.type,
   } satisfies PdfJobPayload;
 

@@ -28,9 +28,18 @@ http://localhost:3000/api/auth/callback/google
 
 The public marketing page stays at `/`. The authenticated app area starts at `/dashboard`, and unauthenticated access redirects to `/login`.
 
-The middleware matcher currently covers `/dashboard` only. If you add more clean-URL protected routes later, add them to `src/middleware.ts` as well so they get the same early redirect behavior.
+The middleware keeps the early auth redirect on `/dashboard` and also attaches `x-request-id` to matched app and API requests. If you add routes that should bypass or extend that behavior later, update `src/middleware.ts` deliberately.
 
 For non-local deployments, also set `AUTH_URL` (or `NEXTAUTH_URL`) to the deployed origin so OAuth callbacks resolve correctly outside `http://localhost:3000`.
+
+## Observability baseline
+
+Issue `#108` adds structured logging with Pino and response/request correlation through `x-request-id`.
+
+- The shared logger entrypoint lives in `src/lib/logger.ts`.
+- Matched app and API requests receive an `x-request-id` response header via `src/middleware.ts`.
+- Queue producers should pass `requestId` into `enqueuePdfJob(...)` whenever a job originates from an HTTP request so worker logs can preserve end-to-end correlation.
+- Runtime logs must include metadata only. Do not log raw tokens, cookies, presigned URLs, or document contents.
 
 ## Local storage setup
 
