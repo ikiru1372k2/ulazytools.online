@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
       data: {
         bucket: getStorageBucket(),
         checksum: null,
+        expiresAt: null,
         guestId: guestSession?.guestId ?? null,
         mimeType: body.contentType,
         objectKey,

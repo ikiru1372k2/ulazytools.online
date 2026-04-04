@@ -10,6 +10,8 @@ const queueEnv = getQueueEnv();
 export const PDF_QUEUE_NAME = "pdf-jobs";
 export const PDF_JOB_TYPES = ["process"] as const;
 const PDF_JOB_TYPE_SET = new Set<string>(PDF_JOB_TYPES);
+export const CLEANUP_QUEUE_NAME = "cleanup-jobs";
+export const CLEANUP_JOB_NAME = "delete-expired-file-objects";
 
 export type PdfJobType = (typeof PDF_JOB_TYPES)[number];
 
@@ -19,7 +21,12 @@ export type PdfJobPayload = {
   type: PdfJobType;
 };
 
+export type CleanupJobPayload = {
+  requestedAt?: string;
+};
+
 const globalForQueue = globalThis as typeof globalThis & {
+  cleanupQueue?: Queue<CleanupJobPayload>;
   pdfQueue?: Queue<PdfJobPayload>;
   pdfQueueConnection?: IORedis;
 };
@@ -56,6 +63,19 @@ export function getPdfQueue() {
   }
 
   return globalForQueue.pdfQueue;
+}
+
+export function getCleanupQueue() {
+  if (!globalForQueue.cleanupQueue) {
+    globalForQueue.cleanupQueue = new Queue<CleanupJobPayload>(
+      CLEANUP_QUEUE_NAME,
+      {
+        connection: getSharedQueueConnection(),
+      }
+    );
+  }
+
+  return globalForQueue.cleanupQueue;
 }
 
 export function getDefaultPdfJobOptions(): JobsOptions {
@@ -107,4 +127,19 @@ export async function enqueuePdfJob(payload: PdfJobPayload) {
   }
 
   return queuedJob;
+}
+
+export async function registerCleanupJob() {
+  return getCleanupQueue().upsertJobScheduler(
+    CLEANUP_JOB_NAME,
+    {
+      every: queueEnv.CLEANUP_REPEAT_EVERY_MS,
+    },
+    {
+      data: {
+        requestedAt: new Date().toISOString(),
+      },
+      name: CLEANUP_JOB_NAME,
+    }
+  );
 }
