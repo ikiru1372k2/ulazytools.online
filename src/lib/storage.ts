@@ -9,6 +9,7 @@ export {
   presignGet,
   presignPut,
   remove,
+  type PresignedGetOptions,
   StorageObjectNotFoundError,
   type ObjectMetadata,
   uploadBuffer,

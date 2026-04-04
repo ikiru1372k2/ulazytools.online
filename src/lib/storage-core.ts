@@ -35,6 +35,10 @@ export type PresignedUploadResult = {
   uploadUrl: string;
 };
 
+export type PresignedGetOptions = {
+  responseContentDisposition?: string;
+};
+
 export type StoredObject = {
   body: NonNullable<GetObjectCommandOutput["Body"]>;
   contentLength?: number;
@@ -175,7 +179,11 @@ export async function getObjectStream(key: string): Promise<StoredObject> {
   };
 }
 
-export async function presignGet(key: string, ttlSeconds: number) {
+export async function presignGet(
+  key: string,
+  ttlSeconds: number,
+  options?: PresignedGetOptions
+) {
   if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) {
     throw new Error("presignGet requires a finite positive ttlSeconds");
   }
@@ -187,6 +195,7 @@ export async function presignGet(key: string, ttlSeconds: number) {
     new GetObjectCommand({
       Bucket: storageConfig.bucket,
       Key: key,
+      ResponseContentDisposition: options?.responseContentDisposition,
     }),
     { expiresIn }
   );
