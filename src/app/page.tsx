@@ -35,6 +35,12 @@ export default function HomePage() {
             </a>
             <a
               className="rounded-full border border-slate-300 bg-white/80 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400"
+              href="/tools"
+            >
+              Browse tools
+            </a>
+            <a
+              className="rounded-full border border-slate-300 bg-white/80 px-6 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400"
               href="/dashboard"
             >
               Open protected app

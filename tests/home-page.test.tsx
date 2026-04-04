@@ -20,6 +20,10 @@ describe("HomePage", () => {
     );
 
     expect(
+      screen.getByRole("link", { name: /browse tools/i })
+    ).toHaveAttribute("href", "/tools");
+
+    expect(
       screen.getByRole("link", { name: /open protected app/i })
     ).toHaveAttribute("href", "/dashboard");
   });
