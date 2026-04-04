@@ -16,6 +16,7 @@ import {
   serializeGuestCookie,
 } from "@/lib/guest";
 import { createLogger } from "@/lib/logger";
+import { incrementUploadPresignCount } from "@/lib/metrics";
 import { buildObjectKey, buildObjectTags } from "@/lib/objectKey";
 import { normalizeRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
 import { getStorageBucket, presignPut } from "@/lib/storage";
@@ -130,6 +131,8 @@ export async function POST(request: NextRequest) {
       objectKey: fileObject.objectKey,
       uploadUrl: presignedUpload.uploadUrl,
     });
+
+    await incrementUploadPresignCount();
 
     if (guestSession?.shouldSetCookie) {
       response.cookies.set(

@@ -11,6 +11,7 @@ const resolveGuestSession = jest.fn();
 const serializeGuestCookie = jest.fn();
 const assertUploadPresignAllowed = jest.fn();
 const buildObjectKey = jest.fn();
+const incrementUploadPresignCount = jest.fn();
 const MockRateLimitExceededError = class RateLimitExceededError extends Error {
   retryAfterSeconds: number;
 
@@ -57,8 +58,10 @@ describe("/api/upload/presign", () => {
     serializeGuestCookie.mockReset();
     assertUploadPresignAllowed.mockReset();
     buildObjectKey.mockReset();
+    incrementUploadPresignCount.mockReset();
 
     process.env.MAX_UPLOAD_MB = "10";
+    process.env.METRICS_ENABLED = "false";
     process.env.PRESIGN_EXPIRES_SECONDS = "60";
     process.env.FILE_RETENTION_HOURS = "168";
     jest.doMock("@/lib/auth", () => ({ auth }));
@@ -91,6 +94,9 @@ describe("/api/upload/presign", () => {
     }));
     jest.doMock("@/server/uploads/rateLimit", () => ({
       assertUploadPresignAllowed,
+    }));
+    jest.doMock("@/lib/metrics", () => ({
+      incrementUploadPresignCount,
     }));
     jest.doMock("@/server/rateLimit", () => ({
       RateLimitExceededError: MockRateLimitExceededError,
@@ -209,6 +215,7 @@ describe("/api/upload/presign", () => {
       }),
       "Created presigned upload"
     );
+    expect(incrementUploadPresignCount).toHaveBeenCalledTimes(1);
     expect(resolveGuestSession).not.toHaveBeenCalled();
   });
 
@@ -382,6 +389,7 @@ describe("/api/upload/presign", () => {
       },
     });
     expect(create).not.toHaveBeenCalled();
+    expect(incrementUploadPresignCount).not.toHaveBeenCalled();
   });
 
   it("returns 500 for storage failures", async () => {
@@ -428,6 +436,7 @@ describe("/api/upload/presign", () => {
       }),
       "Failed to create presigned upload"
     );
+    expect(incrementUploadPresignCount).not.toHaveBeenCalled();
   });
 
   it("returns 429 with Retry-After when upload presign is rate limited", async () => {
