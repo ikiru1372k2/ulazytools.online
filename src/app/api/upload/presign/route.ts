@@ -14,11 +14,11 @@ import {
   serializeGuestCookie,
 } from "@/lib/guest";
 import { createLogger } from "@/lib/logger";
+import { buildObjectKey, buildObjectTags } from "@/lib/objectKey";
 import { normalizeRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
 import { getStorageBucket, presignPut } from "@/lib/storage";
 import { assertUploadPresignAllowed } from "@/server/uploads/rateLimit";
 import {
-  buildPresignedUploadKey,
   parsePresignRequestJson,
   parsePresignUploadInput,
   UploadValidationError,
@@ -88,7 +88,13 @@ export async function POST(request: NextRequest) {
     validateUpload(body);
 
     const fileIdSeed = crypto.randomUUID();
-    const objectKey = buildPresignedUploadKey(fileIdSeed, body.filename);
+    const objectKey = buildObjectKey({
+      filename: body.filename,
+      guestId: guestSession?.guestId,
+      jobId: fileIdSeed,
+      kind: "upload",
+      userId,
+    });
     const uploadEnv = getUploadEnv();
     const fileObject = await prisma.fileObject.create({
       data: {
@@ -112,7 +118,10 @@ export async function POST(request: NextRequest) {
     const presignedUpload = await presignPut(
       fileObject.objectKey,
       body.contentType,
-      uploadEnv.PRESIGN_EXPIRES_SECONDS
+      uploadEnv.PRESIGN_EXPIRES_SECONDS,
+      {
+        tags: buildObjectTags(),
+      }
     );
 
     log.info(

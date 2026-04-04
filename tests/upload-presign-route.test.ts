@@ -10,6 +10,7 @@ const getStorageBucket = jest.fn();
 const resolveGuestSession = jest.fn();
 const serializeGuestCookie = jest.fn();
 const assertUploadPresignAllowed = jest.fn();
+const buildObjectKey = jest.fn();
 const MockRateLimitExceededError = class RateLimitExceededError extends Error {
   retryAfterSeconds: number;
 
@@ -55,9 +56,11 @@ describe("/api/upload/presign", () => {
     resolveGuestSession.mockReset();
     serializeGuestCookie.mockReset();
     assertUploadPresignAllowed.mockReset();
+    buildObjectKey.mockReset();
 
     process.env.MAX_UPLOAD_MB = "10";
     process.env.PRESIGN_EXPIRES_SECONDS = "60";
+    process.env.FILE_RETENTION_HOURS = "168";
     jest.doMock("@/lib/auth", () => ({ auth }));
     jest.doMock("@/lib/db", () => ({
       prisma: {
@@ -69,6 +72,22 @@ describe("/api/upload/presign", () => {
     jest.doMock("@/lib/storage", () => ({
       getStorageBucket,
       presignPut,
+    }));
+    jest.doMock("@/lib/objectKey", () => ({
+      buildObjectKey: (...args: unknown[]) => buildObjectKey(...args),
+      buildObjectTags: jest.fn((input: { expiresAt?: Date | null; jobId?: string | null } = {}) => ({
+        app: "ulazytoolsa",
+        ...(input.expiresAt
+          ? {
+              expiresAt: input.expiresAt.toISOString(),
+            }
+          : {}),
+        ...(input.jobId
+          ? {
+              jobId: input.jobId,
+            }
+          : {}),
+      })),
     }));
     jest.doMock("@/server/uploads/rateLimit", () => ({
       assertUploadPresignAllowed,
@@ -110,9 +129,12 @@ describe("/api/upload/presign", () => {
 
   it("creates a presigned upload for an authenticated user", async () => {
     auth.mockResolvedValue({ user: { id: "user-123" } });
+    buildObjectKey.mockReturnValue(
+      "uploads/2026/04/users/user-123/jobs/file-seed/report.pdf"
+    );
     create.mockResolvedValue({
       id: "file-123",
-      objectKey: "uploads/2026/04/upload/report.pdf",
+      objectKey: "uploads/2026/04/users/user-123/jobs/file-seed/report.pdf",
     });
     presignPut.mockResolvedValue({
       headers: {
@@ -146,7 +168,7 @@ describe("/api/upload/presign", () => {
       headers: {
         "Content-Type": "application/pdf",
       },
-      objectKey: "uploads/2026/04/upload/report.pdf",
+      objectKey: "uploads/2026/04/users/user-123/jobs/file-seed/report.pdf",
       uploadUrl: "https://example.com/upload",
     });
     expect(create).toHaveBeenCalledWith(
@@ -163,6 +185,23 @@ describe("/api/upload/presign", () => {
         }),
       })
     );
+    expect(buildObjectKey).toHaveBeenCalledWith({
+      filename: "report.pdf",
+      guestId: undefined,
+      jobId: expect.any(String),
+      kind: "upload",
+      userId: "user-123",
+    });
+    expect(presignPut).toHaveBeenCalledWith(
+      "uploads/2026/04/users/user-123/jobs/file-seed/report.pdf",
+      "application/pdf",
+      60,
+      {
+        tags: {
+          app: "ulazytoolsa",
+        },
+      }
+    );
     expect(info).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: "file-123",
@@ -175,6 +214,9 @@ describe("/api/upload/presign", () => {
 
   it("creates a guest cookie for anonymous callers", async () => {
     auth.mockResolvedValue(null);
+    buildObjectKey.mockReturnValue(
+      "uploads/2026/04/guests/guest-123/jobs/file-seed/guest.pdf"
+    );
     resolveGuestSession.mockResolvedValue({
       guestId: "guest-123",
       isNew: true,
@@ -183,7 +225,7 @@ describe("/api/upload/presign", () => {
     serializeGuestCookie.mockResolvedValue("guest-123.signature");
     create.mockResolvedValue({
       id: "file-guest",
-      objectKey: "uploads/2026/04/upload/guest.pdf",
+      objectKey: "uploads/2026/04/guests/guest-123/jobs/file-seed/guest.pdf",
     });
     presignPut.mockResolvedValue({
       headers: {
@@ -223,9 +265,13 @@ describe("/api/upload/presign", () => {
 
   it("uses the middleware-forwarded guest identity without minting a second one", async () => {
     auth.mockResolvedValue(null);
+    buildObjectKey.mockReturnValue(
+      "uploads/2026/04/guests/00000000-0000-4000-8000-000000000123/jobs/file-seed/forwarded.pdf"
+    );
     create.mockResolvedValue({
       id: "file-forwarded",
-      objectKey: "uploads/2026/04/upload/forwarded.pdf",
+      objectKey:
+        "uploads/2026/04/guests/00000000-0000-4000-8000-000000000123/jobs/file-seed/forwarded.pdf",
     });
     presignPut.mockResolvedValue({
       headers: {
@@ -267,6 +313,9 @@ describe("/api/upload/presign", () => {
 
   it("ignores an untrusted forwarded guest identity", async () => {
     auth.mockResolvedValue(null);
+    buildObjectKey.mockReturnValue(
+      "uploads/2026/04/guests/guest-123/jobs/file-seed/untrusted.pdf"
+    );
     resolveGuestSession.mockResolvedValue({
       guestId: "guest-123",
       isNew: false,
@@ -274,7 +323,7 @@ describe("/api/upload/presign", () => {
     });
     create.mockResolvedValue({
       id: "file-untrusted",
-      objectKey: "uploads/2026/04/upload/untrusted.pdf",
+      objectKey: "uploads/2026/04/guests/guest-123/jobs/file-seed/untrusted.pdf",
     });
     presignPut.mockResolvedValue({
       headers: {
@@ -334,6 +383,9 @@ describe("/api/upload/presign", () => {
 
   it("returns 500 for storage failures", async () => {
     auth.mockResolvedValue(null);
+    buildObjectKey.mockReturnValue(
+      "uploads/2026/04/guests/guest-123/jobs/file-seed/fail.pdf"
+    );
     resolveGuestSession.mockResolvedValue({
       guestId: "guest-123",
       isNew: false,
@@ -341,7 +393,7 @@ describe("/api/upload/presign", () => {
     });
     create.mockResolvedValue({
       id: "file-500",
-      objectKey: "uploads/2026/04/upload/fail.pdf",
+      objectKey: "uploads/2026/04/guests/guest-123/jobs/file-seed/fail.pdf",
     });
     presignPut.mockRejectedValue(new Error("storage failed"));
     getStorageBucket.mockReturnValue("test-bucket");

@@ -12,6 +12,7 @@ import { getStorageEnv } from "@/lib/env";
 const storageEnv = getStorageEnv();
 
 type UploadBody = Buffer | Uint8Array;
+type ObjectTags = Record<string, string>;
 
 type StorageConfig = {
   bucket: string;
@@ -37,6 +38,14 @@ export type PresignedUploadResult = {
 
 export type PresignedGetOptions = {
   responseContentDisposition?: string;
+};
+
+export type PresignedPutOptions = {
+  tags?: ObjectTags;
+};
+
+export type UploadBufferOptions = {
+  tags?: ObjectTags;
 };
 
 export type StoredObject = {
@@ -84,61 +93,27 @@ const storageClient = new S3Client({
   region: storageConfig.region,
 });
 
-function getMonth(date: Date) {
-  return String(date.getUTCMonth() + 1).padStart(2, "0");
-}
-
-function sanitizeFilename(filename: string) {
-  const trimmed = filename.trim().toLowerCase();
-
-  if (!trimmed) {
-    return "payload.bin";
+function encodeTags(tags?: ObjectTags) {
+  if (!tags) {
+    return undefined;
   }
 
-  const safe = trimmed
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+  const entries = Object.entries(tags)
+    .map(([key, value]) => [key.trim(), value.trim()] as [string, string])
+    .filter(([key, value]) => key && value);
 
-  return safe || "payload.bin";
-}
-
-function sanitizeJobId(jobId: string) {
-  const trimmed = jobId.trim();
-
-  if (!trimmed) {
-    throw new Error("buildUploadKey requires a non-empty jobId");
+  if (!entries.length) {
+    return undefined;
   }
 
-  const safe = trimmed
-    .replace(/[^a-zA-Z0-9_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  if (!safe) {
-    throw new Error("buildUploadKey requires a safe jobId");
-  }
-
-  return safe;
-}
-
-export function buildUploadKey(
-  jobId: string,
-  filename?: string,
-  date = new Date()
-) {
-  const normalizedJobId = sanitizeJobId(jobId);
-  const year = String(date.getUTCFullYear());
-  const month = getMonth(date);
-  const objectName = sanitizeFilename(filename ?? "payload.bin");
-
-  return `uploads/${year}/${month}/${normalizedJobId}/${objectName}`;
+  return new URLSearchParams(entries).toString();
 }
 
 export async function uploadBuffer(
   key: string,
   body: UploadBody,
-  contentType: string
+  contentType: string,
+  options?: UploadBufferOptions
 ): Promise<UploadResult> {
   const response = await storageClient.send(
     new PutObjectCommand({
@@ -146,6 +121,8 @@ export async function uploadBuffer(
       Bucket: storageConfig.bucket,
       ContentType: contentType,
       Key: key,
+      // S3-compatible tag support is best-effort; some MinIO setups may not surface tags locally.
+      Tagging: encodeTags(options?.tags),
     })
   );
 
@@ -204,7 +181,8 @@ export async function presignGet(
 export async function presignPut(
   key: string,
   contentType: string,
-  ttlSeconds: number
+  ttlSeconds: number,
+  options?: PresignedPutOptions
 ): Promise<PresignedUploadResult> {
   const normalizedContentType = contentType.trim();
 
@@ -223,6 +201,8 @@ export async function presignPut(
       Bucket: storageConfig.bucket,
       ContentType: normalizedContentType,
       Key: key,
+      // S3-compatible tag support is best-effort; some MinIO setups may not surface tags locally.
+      Tagging: encodeTags(options?.tags),
     }),
     { expiresIn }
   );
