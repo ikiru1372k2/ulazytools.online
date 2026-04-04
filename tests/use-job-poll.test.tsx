@@ -269,7 +269,7 @@ describe("useJobPoll", () => {
     expect(screen.getByTestId("polling")).toHaveTextContent("true");
   });
 
-  it("surfaces API errors and stops polling", async () => {
+  it("surfaces API messages and stops polling", async () => {
     fetchMock.mockResolvedValue(
       createJsonResponse({
         body: {
@@ -289,7 +289,9 @@ describe("useJobPoll", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByTestId("error")).toHaveTextContent("JOB_EXPIRED");
+    expect(screen.getByTestId("error")).toHaveTextContent(
+      "Job output has expired"
+    );
     expect(screen.getByTestId("polling")).toHaveTextContent("false");
   });
 

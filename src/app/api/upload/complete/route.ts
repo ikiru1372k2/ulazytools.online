@@ -13,6 +13,7 @@ import {
 import {
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
+  INTERNAL_GUEST_ID_TRUST_HEADER,
   isGuestId,
   verifyGuestCookieValue,
 } from "@/lib/guest";
@@ -34,8 +35,12 @@ export async function POST(request: NextRequest) {
   const session = await auth();
   const userId = session?.user?.id;
   const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const trustedGuestHeader =
+    request.headers.get(INTERNAL_GUEST_ID_TRUST_HEADER) === "1";
   const trustedGuestId =
-    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+    trustedGuestHeader && forwardedGuestId && isGuestId(forwardedGuestId)
+      ? forwardedGuestId
+      : null;
   const guestId = userId
     ? undefined
     : trustedGuestId ||

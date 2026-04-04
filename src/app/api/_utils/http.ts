@@ -15,11 +15,11 @@ export function toErrorResponse(
   const appError = toAppError(error);
   const response = NextResponse.json(
     {
+      ...options.extraBody,
       error: {
         code: appError.code,
         message: appError.userMessage,
       },
-      ...options.extraBody,
     },
     {
       status: appError.httpStatus,

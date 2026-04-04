@@ -11,6 +11,7 @@ const parseCompleteUploadInput = jest.fn();
 const parseCompleteUploadJson = jest.fn();
 const verifyGuestCookieValue = jest.fn();
 const UploadCompletionError = class UploadCompletionError extends Error {
+  __appErrorBrand = true as const;
   code: string;
   httpStatus: number;
   retryable: boolean;
@@ -76,6 +77,7 @@ describe("/api/upload/complete", () => {
     jest.doMock("@/lib/guest", () => ({
       GUEST_ID_COOKIE: "guestId",
       INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+      INTERNAL_GUEST_ID_TRUST_HEADER: "x-ulazytools-guest-trusted",
       isGuestId: (value: string) =>
         /^[0-9a-f-]{36}$/i.test(value),
       verifyGuestCookieValue: (...args: unknown[]) => verifyGuestCookieValue(...args),
@@ -251,6 +253,7 @@ describe("/api/upload/complete", () => {
       },
       headers: new Headers({
         "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+        "x-ulazytools-guest-trusted": "1",
       }),
       json: async () => ({
         etag: "etag-forwarded",
@@ -260,6 +263,42 @@ describe("/api/upload/complete", () => {
 
     expect(response.status).toBe(200);
     expect(verifyGuestCookieValue).not.toHaveBeenCalled();
+  });
+
+  it("ignores an untrusted forwarded guest identity", async () => {
+    auth.mockResolvedValue(null);
+    verifyGuestCookieValue.mockResolvedValue("guest-123");
+    findUnique.mockResolvedValue({
+      checksum: null,
+      guestId: "guest-123",
+      id: "file-untrusted",
+      objectKey: "uploads/2026/04/file-untrusted/untrusted.pdf",
+      sizeBytes: BigInt(200),
+      status: "PENDING_UPLOAD",
+      userId: null,
+    });
+    loadVerifiedObjectMetadata.mockResolvedValue({
+      etag: "etag-untrusted",
+      size: BigInt(200),
+    });
+
+    const { POST } = await import("@/app/api/upload/complete/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(() => ({ value: "guest-123.signature" })),
+      },
+      headers: new Headers({
+        "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+      }),
+      json: async () => ({
+        etag: "etag-untrusted",
+        fileId: "file-untrusted",
+      }),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).toHaveBeenCalledWith("guest-123.signature");
   });
 
   it("rejects non-owner callers", async () => {

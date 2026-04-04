@@ -44,7 +44,12 @@ async function parseResponseJson<T>(response: Response): Promise<T | null> {
 }
 
 function isTerminalPollError(message: string) {
-  return message === "JOB_EXPIRED" || message === "NOT_FOUND";
+  return (
+    message === "JOB_EXPIRED" ||
+    message === "NOT_FOUND" ||
+    message === "Job output has expired" ||
+    message === "Not found"
+  );
 }
 
 export function useJobPoll(
@@ -172,8 +177,8 @@ export function useJobPoll(
 
         if (!response.ok) {
           throw new Error(
-            errorPayload?.error.code ||
-              errorPayload?.error.message ||
+            errorPayload?.error.message ||
+              errorPayload?.error.code ||
               "Unable to load job status"
           );
         }

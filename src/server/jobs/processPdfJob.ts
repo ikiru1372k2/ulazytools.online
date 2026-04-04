@@ -1,7 +1,12 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
-import { InternalAppError, NotFoundError, ValidationError } from "@/lib/errors";
+import {
+  InternalAppError,
+  isAppError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
 import { buildObjectKey, buildObjectTags } from "@/lib/objectKey";
 import { uploadBuffer } from "@/lib/storage";
@@ -90,9 +95,15 @@ export async function processPdfJob(
       }),
     });
   } catch (error) {
+    if (isAppError(error)) {
+      throw error;
+    }
+
     throw new InternalAppError("Unable to persist processed PDF output", {
       code: "PDF_OUTPUT_WRITE_FAILED",
       logContext: {
+        cause:
+          error instanceof Error ? error.message : "Unknown output write failure",
         outputKey,
       },
     });

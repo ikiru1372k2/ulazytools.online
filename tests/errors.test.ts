@@ -68,6 +68,40 @@ describe("shared error mapping", () => {
     });
   });
 
+  it("does not trust unbranded app-error-shaped objects", async () => {
+    const response = toErrorResponse({
+      code: "SPOOFED_CODE",
+      httpStatus: 418,
+      userMessage: "spoofed",
+    });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An unexpected error occurred",
+      },
+    });
+  });
+
+  it("does not let extraBody overwrite the canonical error payload", async () => {
+    const response = toErrorResponse(new NotFoundError(), {
+      extraBody: {
+        error: {
+          code: "WRONG",
+          message: "wrong",
+        },
+      } as unknown as Record<string, unknown>,
+    });
+
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "NOT_FOUND",
+        message: "Not found",
+      },
+    });
+  });
+
   it("supports route-specific overrides for gone and not found errors", async () => {
     const notFound = toErrorResponse(new NotFoundError());
     const expired = toErrorResponse(

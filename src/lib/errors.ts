@@ -13,6 +13,7 @@ type AppErrorOverride = Partial<
 >;
 
 export class AppError extends Error {
+  __appErrorBrand = true as const;
   code: string;
   httpStatus: number;
   logContext?: AppErrorLogContext;
@@ -105,16 +106,14 @@ export class RateLimitError extends AppError {
 }
 
 export function isAppError(error: unknown): error is AppError {
-  if (error instanceof AppError) {
-    return true;
-  }
-
   return Boolean(
     error &&
       typeof error === "object" &&
+      "__appErrorBrand" in error &&
       "code" in error &&
       "httpStatus" in error &&
       "userMessage" in error &&
+      (error as Record<string, unknown>).__appErrorBrand === true &&
       typeof (error as Record<string, unknown>).code === "string" &&
       typeof (error as Record<string, unknown>).httpStatus === "number" &&
       typeof (error as Record<string, unknown>).userMessage === "string"
