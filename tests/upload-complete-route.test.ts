@@ -9,6 +9,7 @@ const error = jest.fn();
 const loadVerifiedObjectMetadata = jest.fn();
 const parseCompleteUploadInput = jest.fn();
 const parseCompleteUploadJson = jest.fn();
+const verifyGuestCookieValue = jest.fn();
 const UploadCompletionError = class UploadCompletionError extends Error {
   retryable: boolean;
   status: number;
@@ -43,6 +44,7 @@ describe("/api/upload/complete", () => {
     warn.mockReset();
     error.mockReset();
     loadVerifiedObjectMetadata.mockReset();
+    verifyGuestCookieValue.mockReset();
 
     jest.doMock("@/lib/auth", () => ({ auth }));
     jest.doMock("@/lib/db", () => ({
@@ -58,6 +60,13 @@ describe("/api/upload/complete", () => {
       loadVerifiedObjectMetadata,
       parseCompleteUploadInput,
       parseCompleteUploadJson,
+    }));
+    jest.doMock("@/lib/guest", () => ({
+      GUEST_ID_COOKIE: "guestId",
+      INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+      isGuestId: (value: string) =>
+        /^[0-9a-f-]{36}$/i.test(value),
+      verifyGuestCookieValue: (...args: unknown[]) => verifyGuestCookieValue(...args),
     }));
     jest.doMock(
       "pino",
@@ -124,10 +133,12 @@ describe("/api/upload/complete", () => {
         status: "READY",
       },
     });
+    expect(verifyGuestCookieValue).not.toHaveBeenCalled();
   });
 
   it("allows the matching guest to complete a guest upload", async () => {
     auth.mockResolvedValue(null);
+    verifyGuestCookieValue.mockResolvedValue("guest-123");
     findUnique.mockResolvedValue({
       checksum: null,
       guestId: "guest-123",
@@ -158,8 +169,44 @@ describe("/api/upload/complete", () => {
     expect(response.status).toBe(200);
   });
 
+  it("uses the middleware-forwarded guest identity without re-verifying the cookie", async () => {
+    auth.mockResolvedValue(null);
+    findUnique.mockResolvedValue({
+      checksum: null,
+      guestId: "00000000-0000-4000-8000-000000000123",
+      id: "file-forwarded",
+      objectKey: "uploads/2026/04/file-forwarded/forwarded.pdf",
+      sizeBytes: BigInt(200),
+      status: "PENDING_UPLOAD",
+      userId: null,
+    });
+    loadVerifiedObjectMetadata.mockResolvedValue({
+      etag: "etag-forwarded",
+      size: BigInt(200),
+    });
+
+    const { POST } = await import("@/app/api/upload/complete/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(() => undefined),
+      },
+      headers: new Headers({
+        "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+      }),
+      json: async () => ({
+        etag: "etag-forwarded",
+        fileId: "file-forwarded",
+      }),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).not.toHaveBeenCalled();
+  });
+
   it("rejects non-owner callers", async () => {
     auth.mockResolvedValue({ user: { id: "user-999" } });
+    verifyGuestCookieValue.mockResolvedValue(null);
     findUnique.mockResolvedValue({
       guestId: null,
       id: "file-123",

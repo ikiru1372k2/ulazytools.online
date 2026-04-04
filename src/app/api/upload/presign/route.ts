@@ -4,20 +4,17 @@ import type { NextRequest } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getUploadEnv } from "@/lib/env";
-import { createLogger } from "@/lib/logger";
-import {
-  getStorageBucket,
-  presignPut,
-} from "@/lib/storage";
-import {
-  normalizeRequestId,
-  REQUEST_ID_HEADER,
-} from "@/lib/request-id";
 import {
   getGuestCookieOptions,
   GUEST_ID_COOKIE,
-  resolveGuestIdentity,
-} from "@/server/uploads/guestIdentity";
+  INTERNAL_GUEST_ID_HEADER,
+  isGuestId,
+  resolveGuestSession,
+  serializeGuestCookie,
+} from "@/lib/guest";
+import { createLogger } from "@/lib/logger";
+import { normalizeRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
+import { getStorageBucket, presignPut } from "@/lib/storage";
 import { assertUploadPresignAllowed } from "@/server/uploads/rateLimit";
 import {
   buildPresignedUploadKey,
@@ -42,9 +39,18 @@ export async function POST(request: NextRequest) {
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
   const userId = session?.user?.id;
-  const guestIdentity = resolveGuestIdentity(
-    request.cookies.get(GUEST_ID_COOKIE)?.value
-  );
+  const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const trustedGuestId =
+    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+  const guestSession = userId
+    ? null
+    : trustedGuestId
+      ? {
+          guestId: trustedGuestId,
+          isNew: false,
+          shouldSetCookie: false,
+        }
+      : await resolveGuestSession(request.cookies.get(GUEST_ID_COOKIE)?.value);
   const log = createLogger({
     requestId,
     userId,
@@ -52,7 +58,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await assertUploadPresignAllowed({
-      guestId: userId ? undefined : guestIdentity.guestId,
+      guestId: guestSession?.guestId,
       ip: getClientIp(request),
       userId,
     });
@@ -67,7 +73,7 @@ export async function POST(request: NextRequest) {
       data: {
         bucket: getStorageBucket(),
         checksum: null,
-        guestId: userId ? null : guestIdentity.guestId,
+        guestId: guestSession?.guestId ?? null,
         mimeType: body.contentType,
         objectKey,
         originalName: body.filename,
@@ -90,7 +96,7 @@ export async function POST(request: NextRequest) {
     log.info(
       {
         fileId: fileObject.id,
-        guestId: userId ? undefined : guestIdentity.guestId,
+        guestId: guestSession?.guestId,
         mimeType: body.contentType,
         sizeBytes: body.sizeBytes,
       },
@@ -105,10 +111,10 @@ export async function POST(request: NextRequest) {
       uploadUrl: presignedUpload.uploadUrl,
     });
 
-    if (!userId && guestIdentity.isNew) {
+    if (guestSession?.shouldSetCookie) {
       response.cookies.set(
         GUEST_ID_COOKIE,
-        guestIdentity.guestId,
+        await serializeGuestCookie(guestSession.guestId),
         getGuestCookieOptions()
       );
     }
@@ -118,7 +124,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof UploadValidationError) {
       log.warn(
         {
-          guestId: userId ? undefined : guestIdentity.guestId,
+          guestId: guestSession?.guestId,
         },
         error.message
       );
@@ -134,7 +140,7 @@ export async function POST(request: NextRequest) {
     log.error(
       {
         err: error,
-        guestId: userId ? undefined : guestIdentity.guestId,
+        guestId: guestSession?.guestId,
       },
       "Failed to create presigned upload"
     );

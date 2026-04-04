@@ -9,7 +9,7 @@ describe("job access helpers", () => {
     expect(
       canAccessJob(
         {
-          fileObject: null,
+          guestId: null,
           userId: "user-123",
         },
         {
@@ -19,15 +19,13 @@ describe("job access helpers", () => {
     ).toBe(true);
   });
 
-  it("authorizes the matching guest through the related file object", async () => {
+  it("authorizes the matching guest through direct job guest ownership", async () => {
     const { canAccessJob } = await import("@/server/jobs/jobAccess");
 
     expect(
       canAccessJob(
         {
-          fileObject: {
-            guestId: "guest-123",
-          },
+          guestId: "guest-123",
           userId: null,
         },
         {
@@ -43,9 +41,7 @@ describe("job access helpers", () => {
     expect(
       canAccessJob(
         {
-          fileObject: {
-            guestId: "guest-123",
-          },
+          guestId: "guest-123",
           userId: null,
         },
         {
@@ -114,7 +110,7 @@ describe("job access helpers", () => {
         createdAt: new Date("2026-04-04T11:00:00.000Z"),
         errorCode: null,
         errorMessage: null,
-        fileObject: null,
+        guestId: null,
         id: "job-123",
         outputRef: "outputs/job-123/processed.pdf",
         status: "SUCCEEDED",
@@ -136,7 +132,7 @@ describe("job access helpers", () => {
         createdAt: new Date("2026-04-04T11:00:00.000Z"),
         errorCode: "WorkerError",
         errorMessage: "PDF processing failed.",
-        fileObject: null,
+        guestId: null,
         id: "job-123",
         outputRef: null,
         status: "FAILED",

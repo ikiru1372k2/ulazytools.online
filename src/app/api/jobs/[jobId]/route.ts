@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  GUEST_ID_COOKIE,
+  INTERNAL_GUEST_ID_HEADER,
+  isGuestId,
+  verifyGuestCookieValue,
+} from "@/lib/guest";
 import { createLogger } from "@/lib/logger";
 import { normalizeRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
 import {
@@ -12,7 +18,6 @@ import {
   toSafeJobProjection,
 } from "@/server/jobs/jobAccess";
 import { assertJobStatusAllowed } from "@/server/jobs/rateLimit";
-import { GUEST_ID_COOKIE } from "@/server/uploads/guestIdentity";
 
 function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -50,7 +55,14 @@ export async function GET(
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
   const userId = session?.user?.id;
-  const guestId = request.cookies.get(GUEST_ID_COOKIE)?.value?.trim() || undefined;
+  const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const trustedGuestId =
+    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+  const guestId = userId
+    ? undefined
+    : trustedGuestId ||
+      (await verifyGuestCookieValue(request.cookies.get(GUEST_ID_COOKIE)?.value)) ||
+      undefined;
   const jobId = context.params.jobId?.trim();
   const log = createLogger({
     requestId,
@@ -77,11 +89,7 @@ export async function GET(
         createdAt: true,
         errorCode: true,
         errorMessage: true,
-        fileObject: {
-          select: {
-            guestId: true,
-          },
-        },
+        guestId: true,
         id: true,
         outputRef: true,
         status: true,

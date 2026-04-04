@@ -65,6 +65,10 @@ const uploadEnvSchema = z.object({
   PRESIGN_EXPIRES_SECONDS: z.coerce.number().int().positive(),
 });
 
+const guestEnvSchema = z.object({
+  GUEST_COOKIE_SECRET: nonEmptyString,
+});
+
 const authEnvSchema = z.object({
   authGoogleId: nonEmptyString,
   authGoogleSecret: nonEmptyString,
@@ -76,6 +80,7 @@ type AppEnv = z.infer<typeof appEnvSchema>;
 type QueueEnv = z.infer<typeof queueEnvSchema>;
 type StorageEnv = z.infer<typeof storageEnvSchema>;
 type UploadEnv = z.infer<typeof uploadEnvSchema>;
+type GuestEnv = z.infer<typeof guestEnvSchema>;
 type AuthEnv = {
   AUTH_GOOGLE_ID: string;
   AUTH_GOOGLE_SECRET: string;
@@ -89,6 +94,7 @@ let appEnvCache: AppEnv | undefined;
 let queueEnvCache: QueueEnv | undefined;
 let storageEnvCache: StorageEnv | undefined;
 let uploadEnvCache: UploadEnv | undefined;
+let guestEnvCache: GuestEnv | undefined;
 let authEnvCache: AuthEnv | undefined;
 
 export function getAppEnv() {
@@ -109,6 +115,11 @@ export function getStorageEnv() {
 export function getUploadEnv() {
   uploadEnvCache ??= parseEnv(uploadEnvSchema, "upload");
   return uploadEnvCache;
+}
+
+export function getGuestEnv() {
+  guestEnvCache ??= parseEnv(guestEnvSchema, "guest");
+  return guestEnvCache;
 }
 
 export function getAuthEnv() {
@@ -137,4 +148,4 @@ export function getAuthEnv() {
   return authEnvCache;
 }
 
-export type { AppEnv, AuthEnv, QueueEnv, StorageEnv, UploadEnv };
+export type { AppEnv, AuthEnv, GuestEnv, QueueEnv, StorageEnv, UploadEnv };

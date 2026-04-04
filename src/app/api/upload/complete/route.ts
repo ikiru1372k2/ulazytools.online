@@ -3,9 +3,14 @@ import type { NextRequest } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  GUEST_ID_COOKIE,
+  INTERNAL_GUEST_ID_HEADER,
+  isGuestId,
+  verifyGuestCookieValue,
+} from "@/lib/guest";
 import { createLogger } from "@/lib/logger";
 import { normalizeRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
-import { GUEST_ID_COOKIE } from "@/server/uploads/guestIdentity";
 import {
   loadVerifiedObjectMetadata,
   parseCompleteUploadInput,
@@ -28,7 +33,14 @@ export async function POST(request: NextRequest) {
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
   const userId = session?.user?.id;
-  const guestId = request.cookies.get(GUEST_ID_COOKIE)?.value?.trim() || undefined;
+  const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const trustedGuestId =
+    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+  const guestId = userId
+    ? undefined
+    : trustedGuestId ||
+      (await verifyGuestCookieValue(request.cookies.get(GUEST_ID_COOKIE)?.value)) ||
+      undefined;
   const log = createLogger({
     requestId,
     userId,
@@ -56,14 +68,19 @@ export async function POST(request: NextRequest) {
     }
 
     const isAuthorizedUser = Boolean(userId && file.userId === userId);
-    const isAuthorizedGuest = Boolean(!file.userId && file.guestId && file.guestId === guestId);
+    const isAuthorizedGuest = Boolean(
+      !file.userId && file.guestId && file.guestId === guestId
+    );
 
     if (!isAuthorizedUser && !isAuthorizedGuest) {
       return buildResponse({ error: "File not found" }, { status: 404 });
     }
 
     if (file.status !== FILE_OBJECT_PENDING_UPLOAD) {
-      return buildResponse({ error: "Invalid state transition" }, { status: 400 });
+      return buildResponse(
+        { error: "Invalid state transition" },
+        { status: 400 }
+      );
     }
 
     const metadata = await loadVerifiedObjectMetadata(file.objectKey);
