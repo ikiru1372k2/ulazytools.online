@@ -2,8 +2,6 @@ import "server-only";
 
 import { createHash } from "crypto";
 
-import { presignGet } from "@/lib/storage";
-
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DOWNLOAD_URL_TTL_SECONDS = 5 * 60;
 
@@ -95,6 +93,8 @@ export async function toSafeJobProjection(
       if (!job.outputRef) {
         throw new Error(`Job "${job.id}" is missing outputRef`);
       }
+
+      const { presignGet } = await import("@/lib/storage");
 
       return {
         downloadUrl: await presignGet(job.outputRef, DOWNLOAD_URL_TTL_SECONDS),

@@ -14,5 +14,11 @@ describe("DashboardPage", () => {
     expect(
       screen.getByText(/choose one or more pdf files/i)
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: /poll the job status api with shared backoff logic/i,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/job id/i)).toBeInTheDocument();
   });
 });

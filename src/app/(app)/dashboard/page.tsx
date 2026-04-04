@@ -1,3 +1,4 @@
+import JobPollingPanel from "@/components/jobs/JobPollingPanel";
 import PresignedUploader from "@/components/upload/PresignedUploader";
 
 export default function DashboardPage() {
@@ -44,6 +45,10 @@ export default function DashboardPage() {
 
       <div className="lg:col-span-2">
         <PresignedUploader />
+      </div>
+
+      <div className="lg:col-span-2">
+        <JobPollingPanel />
       </div>
     </main>
   );
