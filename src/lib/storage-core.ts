@@ -286,12 +286,20 @@ export async function getObjectMetadata(key: string): Promise<ObjectMetadata> {
 }
 
 export async function remove(key: string) {
-  await storageClient.send(
-    new DeleteObjectCommand({
-      Bucket: storageConfig.bucket,
-      Key: key,
-    })
-  );
+  try {
+    await storageClient.send(
+      new DeleteObjectCommand({
+        Bucket: storageConfig.bucket,
+        Key: key,
+      })
+    );
+  } catch (error) {
+    if (isNotFoundStorageError(error)) {
+      throw new StorageObjectNotFoundError(key);
+    }
+
+    throw error;
+  }
 }
 
 export async function exists(key: string) {

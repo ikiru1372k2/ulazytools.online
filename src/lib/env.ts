@@ -48,7 +48,13 @@ const appEnvSchema = z.object({
 });
 
 const queueEnvSchema = z.object({
+  CLEANUP_BATCH_SIZE: z.coerce.number().int().positive(),
+  CLEANUP_REPEAT_EVERY_MS: z.coerce.number().int().positive(),
   REDIS_URL: nonEmptyString,
+});
+
+const retentionEnvSchema = z.object({
+  FILE_RETENTION_HOURS: z.coerce.number().int().positive(),
 });
 
 const rateLimitEnvSchema = z.object({
@@ -87,6 +93,7 @@ const authEnvSchema = z.object({
 
 type AppEnv = z.infer<typeof appEnvSchema>;
 type QueueEnv = z.infer<typeof queueEnvSchema>;
+type RetentionEnv = z.infer<typeof retentionEnvSchema>;
 type RateLimitEnv = z.infer<typeof rateLimitEnvSchema>;
 type StorageEnv = z.infer<typeof storageEnvSchema>;
 type UploadEnv = z.infer<typeof uploadEnvSchema>;
@@ -102,6 +109,7 @@ type AuthEnv = {
 
 let appEnvCache: AppEnv | undefined;
 let queueEnvCache: QueueEnv | undefined;
+let retentionEnvCache: RetentionEnv | undefined;
 let rateLimitEnvCache: RateLimitEnv | undefined;
 let storageEnvCache: StorageEnv | undefined;
 let uploadEnvCache: UploadEnv | undefined;
@@ -116,6 +124,11 @@ export function getAppEnv() {
 export function getQueueEnv() {
   queueEnvCache ??= parseEnv(queueEnvSchema, "queue");
   return queueEnvCache;
+}
+
+export function getRetentionEnv() {
+  retentionEnvCache ??= parseEnv(retentionEnvSchema, "retention");
+  return retentionEnvCache;
 }
 
 export function getRateLimitEnv() {
@@ -170,6 +183,7 @@ export type {
   GuestEnv,
   QueueEnv,
   RateLimitEnv,
+  RetentionEnv,
   StorageEnv,
   UploadEnv,
 };

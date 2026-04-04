@@ -74,6 +74,7 @@ model FileObject {
   sizeBytes    BigInt
   checksum     String?
   status       FileObjectStatus @default(PENDING_UPLOAD)
+  expiresAt    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -81,6 +82,7 @@ model FileObject {
 
   @@index([userId])
   @@index([guestId])
+  @@index([expiresAt])
   @@index([createdAt])
   @@index([status, createdAt])
 }

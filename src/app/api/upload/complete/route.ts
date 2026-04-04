@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getRetentionEnv } from "@/lib/env";
 import {
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
@@ -129,12 +130,17 @@ export async function POST(request: NextRequest) {
       return buildResponse({ error: "ETAG_MISMATCH" }, { status: 409 });
     }
 
+    const expiresAt = new Date(
+      Date.now() + getRetentionEnv().FILE_RETENTION_HOURS * 60 * 60 * 1000
+    );
+
     await prisma.fileObject.update({
       where: {
         id: file.id,
       },
       data: {
         checksum: metadata.etag,
+        expiresAt,
         status: FILE_OBJECT_READY,
       },
     });

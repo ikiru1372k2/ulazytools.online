@@ -58,7 +58,6 @@ describe("/api/upload/presign", () => {
 
     process.env.MAX_UPLOAD_MB = "10";
     process.env.PRESIGN_EXPIRES_SECONDS = "60";
-
     jest.doMock("@/lib/auth", () => ({ auth }));
     jest.doMock("@/lib/db", () => ({
       prisma: {
@@ -155,6 +154,7 @@ describe("/api/upload/presign", () => {
         data: expect.objectContaining({
           bucket: "test-bucket",
           checksum: null,
+          expiresAt: null,
           guestId: null,
           mimeType: "application/pdf",
           originalName: "report.pdf",
@@ -212,6 +212,7 @@ describe("/api/upload/presign", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          expiresAt: null,
           guestId: "guest-123",
           status: "PENDING_UPLOAD",
           userId: null,
@@ -257,6 +258,7 @@ describe("/api/upload/presign", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          expiresAt: null,
           guestId: "00000000-0000-4000-8000-000000000123",
         }),
       })

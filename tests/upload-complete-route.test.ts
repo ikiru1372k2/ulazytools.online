@@ -45,6 +45,7 @@ describe("/api/upload/complete", () => {
     error.mockReset();
     loadVerifiedObjectMetadata.mockReset();
     verifyGuestCookieValue.mockReset();
+    process.env.FILE_RETENTION_HOURS = "168";
 
     jest.doMock("@/lib/auth", () => ({ auth }));
     jest.doMock("@/lib/db", () => ({
@@ -130,10 +131,56 @@ describe("/api/upload/complete", () => {
       where: { id: "file-123" },
       data: {
         checksum: "etag-123",
+        expiresAt: expect.any(Date),
         status: "READY",
       },
     });
     expect(verifyGuestCookieValue).not.toHaveBeenCalled();
+  });
+
+  it("starts retention when upload verification succeeds", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+    findUnique.mockResolvedValue({
+      checksum: null,
+      guestId: null,
+      id: "file-123",
+      objectKey: "uploads/2026/04/file-123/report.pdf",
+      sizeBytes: BigInt(1234),
+      status: "PENDING_UPLOAD",
+      userId: "user-123",
+    });
+    loadVerifiedObjectMetadata.mockResolvedValue({
+      etag: "etag-123",
+      size: BigInt(1234),
+    });
+
+    const { POST } = await import("@/app/api/upload/complete/route");
+    const originalDateNow = Date.now;
+    Date.now = jest.fn(() => new Date("2026-04-04T12:00:00.000Z").getTime());
+
+    try {
+      await POST({
+        cookies: {
+          get: jest.fn(),
+        },
+        headers: new Headers(),
+        json: async () => ({
+          etag: '"etag-123"',
+          fileId: "file-123",
+        }),
+      } as never);
+
+      expect(update).toHaveBeenCalledWith({
+        where: { id: "file-123" },
+        data: {
+          checksum: "etag-123",
+          expiresAt: new Date("2026-04-11T12:00:00.000Z"),
+          status: "READY",
+        },
+      });
+    } finally {
+      Date.now = originalDateNow;
+    }
   });
 
   it("allows the matching guest to complete a guest upload", async () => {

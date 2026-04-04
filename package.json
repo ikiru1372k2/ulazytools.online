@@ -10,6 +10,7 @@
     "ci:smoke": "node scripts/ci-runtime-smoke.mjs",
     "test": "jest --runInBand",
     "worker:dev": "dotenv -e .env.local -- tsx watch src/workers/pdfWorker.ts",
+    "cleanup:dev": "dotenv -e .env.local -- tsx watch src/workers/cleanupWorker.ts",
     "verify": "npm run typecheck && npm run lint && npm run build",
     "typecheck": "tsc --noEmit --incremental false --project tsconfig.typecheck.json",
     "prisma:generate": "dotenv -e .env.local -- prisma generate",
