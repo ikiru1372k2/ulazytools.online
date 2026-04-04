@@ -1,6 +1,7 @@
 import { Worker, type Job as BullJob } from "bullmq";
 
 import { prisma } from "@/lib/db";
+import { toAppError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
 import {
   PDF_QUEUE_NAME,
@@ -38,14 +39,15 @@ function clamp(value: string, maxLength: number) {
 
 function getErrorDetails(error: unknown): SafeErrorDetails {
   if (error instanceof Error) {
+    const appError = toAppError(error);
     return {
-      code: clamp(error.name || "WorkerError", 191),
-      message: sanitizePersistedErrorMessage(error.message),
+      code: clamp(appError.code, 191),
+      message: sanitizePersistedErrorMessage(appError.userMessage),
     };
   }
 
   return {
-    code: "WorkerError",
+    code: "INTERNAL_ERROR",
     message: "Unknown PDF worker failure",
   };
 }

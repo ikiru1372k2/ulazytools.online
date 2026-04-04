@@ -279,7 +279,12 @@ describe("/api/download/[jobId]", () => {
     );
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: "Not found" });
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "NOT_FOUND",
+        message: "Not found",
+      },
+    });
   });
 
   it("returns 404 when the job does not exist", async () => {
@@ -323,7 +328,12 @@ describe("/api/download/[jobId]", () => {
     );
 
     expect(response.status).toBe(409);
-    await expect(response.json()).resolves.toEqual({ error: "JOB_NOT_READY" });
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "JOB_NOT_READY",
+        message: "Job output is not ready yet",
+      },
+    });
     expect(presignGet).not.toHaveBeenCalled();
   });
 
@@ -354,7 +364,10 @@ describe("/api/download/[jobId]", () => {
 
       expect(response.status).toBe(410);
       await expect(response.json()).resolves.toEqual({
-        error: "JOB_EXPIRED",
+        error: {
+          code: "JOB_EXPIRED",
+          message: "Job output has expired",
+        },
       });
     } finally {
       Date.now = originalDateNow;
@@ -452,7 +465,10 @@ describe("/api/download/[jobId]", () => {
 
     expect(response.status).toBe(410);
     await expect(response.json()).resolves.toEqual({
-      error: "JOB_EXPIRED",
+      error: {
+        code: "JOB_EXPIRED",
+        message: "Job output has expired",
+      },
     });
     expect(presignGet).not.toHaveBeenCalled();
   });
@@ -489,7 +505,10 @@ describe("/api/download/[jobId]", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
-      error: "Unable to create download URL",
+      error: {
+        code: "DOWNLOAD_URL_CREATION_FAILED",
+        message: "Unable to create download URL",
+      },
     });
   });
 });

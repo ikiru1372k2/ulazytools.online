@@ -28,7 +28,10 @@ export type JobStatusResponse =
   | CanceledJobStatus;
 
 export type JobErrorResponse = {
-  error: string;
+  error: {
+    code: string;
+    message: string;
+  };
 };
 
 export function getJobStatusLabel(status: JobStatusResponse["status"]) {

@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { toErrorResponse } from "@/app/api/_utils/http";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  ConflictError,
+  GoneError,
+  InternalAppError,
+  NotFoundError,
+} from "@/lib/errors";
 import {
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
@@ -106,7 +113,9 @@ export async function GET(
   const jobId = context.params.jobId?.trim();
 
   if (!jobId) {
-    return buildJsonResponse({ error: "Not found" }, 404);
+    return toErrorResponse(new NotFoundError(), {
+      cacheControl: "no-store",
+    });
   }
 
   const guestId = await resolveGuestId(request, userId);
@@ -137,15 +146,31 @@ export async function GET(
     });
 
     if (!job || !canAccessJob(job, { guestId, userId })) {
-      return buildJsonResponse({ error: "Not found" }, 404);
+      return toErrorResponse(new NotFoundError(), {
+        cacheControl: "no-store",
+      });
     }
 
     if (job.status !== "SUCCEEDED") {
-      return buildJsonResponse({ error: "JOB_NOT_READY" }, 409);
+      return toErrorResponse(
+        new ConflictError("Job output is not ready yet", {
+          code: "JOB_NOT_READY",
+        }),
+        {
+          cacheControl: "no-store",
+        }
+      );
     }
 
     if (isJobExpired(job)) {
-      return buildJsonResponse({ error: "JOB_EXPIRED" }, 410);
+      return toErrorResponse(
+        new GoneError("Job output has expired", {
+          code: "JOB_EXPIRED",
+        }),
+        {
+          cacheControl: "no-store",
+        }
+      );
     }
 
     if (!job.outputRef) {
@@ -207,7 +232,14 @@ export async function GET(
         "Download output object was not found"
       );
 
-      return buildJsonResponse({ error: "JOB_EXPIRED" }, 410);
+      return toErrorResponse(
+        new GoneError("Job output has expired", {
+          code: "JOB_EXPIRED",
+        }),
+        {
+          cacheControl: "no-store",
+        }
+      );
     }
 
     log.error(
@@ -219,6 +251,13 @@ export async function GET(
       "Failed to create download URL"
     );
 
-    return buildJsonResponse({ error: "Unable to create download URL" }, 500);
+    return toErrorResponse(
+      new InternalAppError("Unable to create download URL", {
+        code: "DOWNLOAD_URL_CREATION_FAILED",
+      }),
+      {
+        cacheControl: "no-store",
+      }
+    );
   }
 }

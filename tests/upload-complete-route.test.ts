@@ -11,13 +11,24 @@ const parseCompleteUploadInput = jest.fn();
 const parseCompleteUploadJson = jest.fn();
 const verifyGuestCookieValue = jest.fn();
 const UploadCompletionError = class UploadCompletionError extends Error {
+  code: string;
+  httpStatus: number;
   retryable: boolean;
   status: number;
+  userMessage: string;
 
-  constructor(message: string, status: number, retryable = false) {
+  constructor(
+    message: string,
+    status: number,
+    retryable = false,
+    code = status === 409 ? "UPLOAD_CONFLICT" : "UPLOAD_INVALID_REQUEST"
+  ) {
     super(message);
+    this.code = code;
+    this.httpStatus = status;
     this.retryable = retryable;
     this.status = status;
+    this.userMessage = message;
   }
 };
 
@@ -290,7 +301,12 @@ describe("/api/upload/complete", () => {
       userId: "user-123",
     });
     loadVerifiedObjectMetadata.mockRejectedValue(
-      new UploadCompletionError("UPLOAD_NOT_VISIBLE_YET", 409, true)
+      new UploadCompletionError(
+        "Upload is not visible yet",
+        409,
+        true,
+        "UPLOAD_NOT_VISIBLE_YET"
+      )
     );
 
     const { POST } = await import("@/app/api/upload/complete/route");
@@ -308,7 +324,10 @@ describe("/api/upload/complete", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      error: "UPLOAD_NOT_VISIBLE_YET",
+      error: {
+        code: "UPLOAD_NOT_VISIBLE_YET",
+        message: "Upload is not visible yet",
+      },
       retryable: true,
     });
   });
@@ -407,7 +426,10 @@ describe("/api/upload/complete", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Invalid state transition",
+      error: {
+        code: "INVALID_STATE_TRANSITION",
+        message: "Invalid state transition",
+      },
     });
   });
 });

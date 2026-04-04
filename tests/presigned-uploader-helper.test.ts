@@ -146,7 +146,10 @@ describe("startPresignedUploads", () => {
       .mockResolvedValueOnce(
         jsonResponse(
           {
-            error: "UPLOAD_NOT_VISIBLE_YET",
+            error: {
+              code: "UPLOAD_NOT_VISIBLE_YET",
+              message: "Upload is not visible yet",
+            },
             retryable: true,
           },
           409

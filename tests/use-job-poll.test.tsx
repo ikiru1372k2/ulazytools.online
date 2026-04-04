@@ -272,7 +272,12 @@ describe("useJobPoll", () => {
   it("surfaces API errors and stops polling", async () => {
     fetchMock.mockResolvedValue(
       createJsonResponse({
-        body: { error: "JOB_EXPIRED" },
+        body: {
+          error: {
+            code: "JOB_EXPIRED",
+            message: "Job output has expired",
+          },
+        },
         ok: false,
         status: 410,
       }) as never

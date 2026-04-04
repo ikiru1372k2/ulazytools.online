@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { toErrorResponse } from "@/app/api/_utils/http";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getUploadEnv } from "@/lib/env";
+import { InternalAppError, RateLimitError } from "@/lib/errors";
 import {
   getGuestCookieOptions,
   GUEST_ID_COOKIE,
@@ -35,19 +37,6 @@ function getClientIp(request: NextRequest) {
   }
 
   return request.headers.get("x-real-ip")?.trim() || undefined;
-}
-
-function buildRateLimitedResponse(retryAfterSeconds: number) {
-  const response = NextResponse.json(
-    {
-      error: "RATE_LIMITED",
-    },
-    { status: 429 }
-  );
-
-  response.headers.set("Retry-After", String(retryAfterSeconds));
-
-  return response;
 }
 
 export async function POST(request: NextRequest) {
@@ -161,7 +150,7 @@ export async function POST(request: NextRequest) {
         "Upload presign request was rate limited"
       );
 
-      return buildRateLimitedResponse(error.retryAfterSeconds);
+      return toErrorResponse(new RateLimitError(error.retryAfterSeconds));
     }
 
     if (error instanceof UploadValidationError) {
@@ -172,12 +161,7 @@ export async function POST(request: NextRequest) {
         error.message
       );
 
-      return NextResponse.json(
-        {
-          error: error.message,
-        },
-        { status: error.status }
-      );
+      return toErrorResponse(error);
     }
 
     log.error(
@@ -188,11 +172,10 @@ export async function POST(request: NextRequest) {
       "Failed to create presigned upload"
     );
 
-    return NextResponse.json(
-      {
-        error: "Unable to create upload URL",
-      },
-      { status: 500 }
+    return toErrorResponse(
+      new InternalAppError("Unable to create upload URL", {
+        code: "UPLOAD_PRESIGN_FAILED",
+      })
     );
   }
 }

@@ -470,7 +470,10 @@ describe("/api/jobs/[jobId]", () => {
 
       expect(response.status).toBe(410);
       await expect(response.json()).resolves.toEqual({
-        error: "JOB_EXPIRED",
+        error: {
+          code: "JOB_EXPIRED",
+          message: "Job output has expired",
+        },
       });
       expect(response.headers.get("Cache-Control")).toBe("no-store");
     } finally {
@@ -580,7 +583,10 @@ describe("/api/jobs/[jobId]", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
-      error: "Unable to load job status",
+      error: {
+        code: "JOB_STATUS_UNAVAILABLE",
+        message: "Unable to load job status",
+      },
     });
   });
 
@@ -608,7 +614,10 @@ describe("/api/jobs/[jobId]", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
-      error: "Unable to load job status",
+      error: {
+        code: "JOB_STATUS_UNAVAILABLE",
+        message: "Unable to load job status",
+      },
     });
   });
 
@@ -631,7 +640,10 @@ describe("/api/jobs/[jobId]", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("9");
     await expect(response.json()).resolves.toEqual({
-      error: "RATE_LIMITED",
+      error: {
+        code: "RATE_LIMITED",
+        message: "Too many requests. Please try again later.",
+      },
     });
     expect(findUnique).not.toHaveBeenCalled();
   });
