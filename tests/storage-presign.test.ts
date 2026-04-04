@@ -1,6 +1,9 @@
 describe("storage presign helpers", () => {
+  const capturedGetInputs: unknown[] = [];
+
   beforeEach(() => {
     jest.resetModules();
+    capturedGetInputs.length = 0;
     process.env.S3_ACCESS_KEY_ID = "test-access-key";
     process.env.S3_BUCKET = "test-bucket";
     process.env.S3_ENDPOINT = "http://localhost:9000";
@@ -16,6 +19,15 @@ describe("storage presign helpers", () => {
 
         constructor(input: unknown) {
           this.input = input;
+        }
+      }
+
+      class GetObjectCommand {
+        input: unknown;
+
+        constructor(input: unknown) {
+          this.input = input;
+          capturedGetInputs.push(input);
         }
       }
 
@@ -43,6 +55,7 @@ describe("storage presign helpers", () => {
       }
 
       return {
+        GetObjectCommand,
         HeadObjectCommand,
         PutObjectCommand,
         S3Client,
@@ -68,11 +81,46 @@ describe("storage presign helpers", () => {
   });
 
   it("rejects a non-positive presign TTL", async () => {
-    const { presignPut } = await import("@/lib/storage");
+    const { presignGet, presignPut } = await import("@/lib/storage");
 
     await expect(
       presignPut("uploads/test.pdf", "application/pdf", 0)
     ).rejects.toThrow(/finite positive ttlSeconds/i);
+    await expect(presignGet("uploads/test.pdf", 0)).rejects.toThrow(
+      /finite positive ttlSeconds/i
+    );
+  });
+
+  it("returns a GET presign URL without overrides by default", async () => {
+    const { presignGet } = await import("@/lib/storage");
+
+    await expect(presignGet("outputs/test.pdf", 300)).resolves.toBe(
+      "https://example.com/upload"
+    );
+    expect(capturedGetInputs).toContainEqual(
+      expect.objectContaining({
+        Bucket: "test-bucket",
+        Key: "outputs/test.pdf",
+        ResponseContentDisposition: undefined,
+      })
+    );
+  });
+
+  it("includes response content disposition when a filename override is supplied", async () => {
+    const { presignGet } = await import("@/lib/storage");
+
+    await expect(
+      presignGet("outputs/test.pdf", 300, {
+        responseContentDisposition: 'attachment; filename="Report.pdf"',
+      })
+    ).resolves.toBe("https://example.com/upload");
+    expect(capturedGetInputs).toContainEqual(
+      expect.objectContaining({
+        Bucket: "test-bucket",
+        Key: "outputs/test.pdf",
+        ResponseContentDisposition: 'attachment; filename="Report.pdf"',
+      })
+    );
   });
 
   it("returns normalized metadata from HEAD object", async () => {
