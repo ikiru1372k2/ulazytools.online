@@ -15,9 +15,7 @@ export type JobStatusRecord = {
   createdAt: Date;
   errorCode: string | null;
   errorMessage: string | null;
-  fileObject: {
-    guestId: string | null;
-  } | null;
+  guestId: string | null;
   id: string;
   outputRef: string | null;
   status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELED";
@@ -33,15 +31,17 @@ export type SafeJobProjection =
   | { status: "canceled" };
 
 export function canAccessJob(
-  job: Pick<JobStatusRecord, "fileObject" | "userId">,
+  job: Pick<JobStatusRecord, "guestId" | "userId">,
   access: JobAccessContext
 ) {
-  const isAuthorizedUser = Boolean(access.userId && job.userId === access.userId);
+  const isAuthorizedUser = Boolean(
+    access.userId && job.userId === access.userId
+  );
   const isAuthorizedGuest = Boolean(
     !job.userId &&
       access.guestId &&
-      job.fileObject?.guestId &&
-      job.fileObject.guestId === access.guestId
+      job.guestId &&
+      job.guestId === access.guestId
   );
 
   return isAuthorizedUser || isAuthorizedGuest;
@@ -83,10 +83,10 @@ export async function toSafeJobProjection(
     case "RUNNING":
       return { status: "processing" };
     case "FAILED":
-        return {
-          errorCode: job.errorCode ?? undefined,
-          status: "failed",
-        };
+      return {
+        errorCode: job.errorCode ?? undefined,
+        status: "failed",
+      };
     case "CANCELED":
       return { status: "canceled" };
     case "SUCCEEDED":

@@ -7,6 +7,7 @@ const warn = jest.fn();
 const error = jest.fn();
 const presignGet = jest.fn();
 const assertJobStatusAllowed = jest.fn();
+const verifyGuestCookieValue = jest.fn();
 
 jest.mock("next/server", () => ({
   NextResponse: {
@@ -34,6 +35,7 @@ describe("/api/jobs/[jobId]", () => {
     error.mockReset();
     presignGet.mockReset();
     assertJobStatusAllowed.mockReset();
+    verifyGuestCookieValue.mockReset();
 
     jest.doMock("@/lib/auth", () => ({ auth }));
     jest.doMock("@/lib/db", () => ({
@@ -45,6 +47,13 @@ describe("/api/jobs/[jobId]", () => {
     }));
     jest.doMock("@/lib/storage", () => ({
       presignGet,
+    }));
+    jest.doMock("@/lib/guest", () => ({
+      GUEST_ID_COOKIE: "guestId",
+      INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+      isGuestId: (value: string) =>
+        /^[0-9a-f-]{36}$/i.test(value),
+      verifyGuestCookieValue: (...args: unknown[]) => verifyGuestCookieValue(...args),
     }));
     jest.doMock("@/server/jobs/rateLimit", () => ({
       assertJobStatusAllowed,
@@ -72,9 +81,7 @@ describe("/api/jobs/[jobId]", () => {
       createdAt: new Date("2026-04-04T11:00:00.000Z"),
       errorCode: null,
       errorMessage: null,
-      fileObject: {
-        guestId: null,
-      },
+      guestId: null,
       id: "job-123",
       outputRef: null,
       status: "PENDING",
@@ -236,13 +243,37 @@ describe("/api/jobs/[jobId]", () => {
     expect(response.status).toBe(404);
   });
 
-  it("allows the matching guest owner", async () => {
-    auth.mockResolvedValue(null);
+  it("ignores guest scope for the owning authenticated user", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
     findUnique.mockResolvedValue(
       buildJob({
-        fileObject: {
-          guestId: "guest-123",
+        guestId: "guest-other",
+        userId: "user-123",
+      })
+    );
+
+    const { GET } = await import("@/app/api/jobs/[jobId]/route");
+
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(() => ({ value: "guest-999.signature" })),
         },
+        headers: new Headers(),
+      } as never,
+      { params: { jobId: "job-123" } }
+    );
+
+    expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).not.toHaveBeenCalled();
+  });
+
+  it("allows the matching guest owner", async () => {
+    auth.mockResolvedValue(null);
+    verifyGuestCookieValue.mockResolvedValue("guest-123");
+    findUnique.mockResolvedValue(
+      buildJob({
+        guestId: "guest-123",
         userId: null,
       })
     );
@@ -252,7 +283,7 @@ describe("/api/jobs/[jobId]", () => {
     const response = await GET(
       {
         cookies: {
-          get: jest.fn(() => ({ value: "guest-123" })),
+          get: jest.fn(() => ({ value: "guest-123.signature" })),
         },
         headers: new Headers({
           "x-real-ip": "198.51.100.20",
@@ -262,6 +293,7 @@ describe("/api/jobs/[jobId]", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).toHaveBeenCalledWith("guest-123.signature");
     expect(assertJobStatusAllowed).toHaveBeenCalledWith({
       guestId: "guest-123",
       ip: "198.51.100.20",
@@ -269,13 +301,11 @@ describe("/api/jobs/[jobId]", () => {
     });
   });
 
-  it("returns 404 for guest token mismatch", async () => {
+  it("uses the middleware-forwarded guest identity without re-verifying the cookie", async () => {
     auth.mockResolvedValue(null);
     findUnique.mockResolvedValue(
       buildJob({
-        fileObject: {
-          guestId: "guest-123",
-        },
+        guestId: "00000000-0000-4000-8000-000000000123",
         userId: null,
       })
     );
@@ -285,7 +315,40 @@ describe("/api/jobs/[jobId]", () => {
     const response = await GET(
       {
         cookies: {
-          get: jest.fn(() => ({ value: "guest-999" })),
+          get: jest.fn(() => undefined),
+        },
+        headers: new Headers({
+          "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+        }),
+      } as never,
+      { params: { jobId: "job-123" } }
+    );
+
+    expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).not.toHaveBeenCalled();
+    expect(assertJobStatusAllowed).toHaveBeenCalledWith({
+      guestId: "00000000-0000-4000-8000-000000000123",
+      ip: undefined,
+      userId: undefined,
+    });
+  });
+
+  it("returns 404 for guest token mismatch", async () => {
+    auth.mockResolvedValue(null);
+    verifyGuestCookieValue.mockResolvedValue("guest-999");
+    findUnique.mockResolvedValue(
+      buildJob({
+        guestId: "guest-123",
+        userId: null,
+      })
+    );
+
+    const { GET } = await import("@/app/api/jobs/[jobId]/route");
+
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(() => ({ value: "guest-999.signature" })),
         },
         headers: new Headers(),
       } as never,

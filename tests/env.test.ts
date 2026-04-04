@@ -7,6 +7,7 @@ describe("server env schema", () => {
       AUTH_GOOGLE_ID: "test-google-client-id",
       AUTH_GOOGLE_SECRET: "test-google-client-secret",
       AUTH_SECRET: "test-auth-secret",
+      GUEST_COOKIE_SECRET: "test-guest-cookie-secret",
       DATABASE_URL: "postgresql://user:pass@localhost:5432/ulazytools",
       DIRECT_URL: "postgresql://user:pass@localhost:5432/ulazytools",
       NODE_ENV: "test",
@@ -32,10 +33,11 @@ describe("server env schema", () => {
   });
 
   it("parses the scoped env shapes", async () => {
-    const { getAuthEnv, getQueueEnv, getStorageEnv, getUploadEnv } =
+    const { getAuthEnv, getGuestEnv, getQueueEnv, getStorageEnv, getUploadEnv } =
       await import("@/lib/env");
 
     expect(getAuthEnv().AUTH_GOOGLE_ID).toBe("test-google-client-id");
+    expect(getGuestEnv().GUEST_COOKIE_SECRET).toBe("test-guest-cookie-secret");
     expect(getQueueEnv().REDIS_URL).toBe("redis://localhost:6379");
     expect(getStorageEnv().S3_FORCE_PATH_STYLE).toBe(true);
     expect(getUploadEnv().MAX_UPLOAD_MB).toBe(10);
@@ -86,10 +88,11 @@ describe("server env schema", () => {
     delete process.env.AUTH_SECRET;
     delete process.env.NEXTAUTH_SECRET;
 
-    const { getAuthEnv, getQueueEnv, getStorageEnv } = await import("@/lib/env");
+    const { getAuthEnv, getGuestEnv, getQueueEnv, getStorageEnv } = await import("@/lib/env");
 
     expect(getQueueEnv().REDIS_URL).toBe("redis://localhost:6379");
     expect(getStorageEnv().S3_BUCKET).toBe("test-bucket");
+    expect(getGuestEnv().GUEST_COOKIE_SECRET).toBe("test-guest-cookie-secret");
     expect(() => getAuthEnv()).toThrow(/invalid auth environment configuration/i);
   });
 });
