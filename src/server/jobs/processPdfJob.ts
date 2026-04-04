@@ -1,6 +1,12 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
+import {
+  InternalAppError,
+  isAppError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
 import { buildObjectKey, buildObjectTags } from "@/lib/objectKey";
 import { uploadBuffer } from "@/lib/storage";
@@ -40,7 +46,9 @@ export async function processPdfJob(
 
   if (!dbJob) {
     log.error("PDF job record was not found");
-    throw new Error(`Job "${payload.jobId}" was not found`);
+    throw new NotFoundError(`Job "${payload.jobId}" was not found`, {
+      code: "JOB_NOT_FOUND",
+    });
   }
 
   if (dbJob.type !== payload.type) {
@@ -51,8 +59,12 @@ export async function processPdfJob(
       },
       "PDF job payload type does not match the database record"
     );
-    throw new Error(
-      `Job "${dbJob.id}" has type "${dbJob.type}" but queue payload requested "${payload.type}"`
+    throw new ValidationError(
+      `Job "${dbJob.id}" has type "${dbJob.type}" but queue payload requested "${payload.type}"`,
+      {
+        code: "JOB_TYPE_MISMATCH",
+        httpStatus: 409,
+      }
     );
   }
 
@@ -76,11 +88,26 @@ export async function processPdfJob(
     userId: dbJob.userId,
   });
 
-  await uploadBuffer(outputKey, STUB_PDF_BYTES, "application/pdf", {
-    tags: buildObjectTags({
-      jobId: dbJob.id,
-    }),
-  });
+  try {
+    await uploadBuffer(outputKey, STUB_PDF_BYTES, "application/pdf", {
+      tags: buildObjectTags({
+        jobId: dbJob.id,
+      }),
+    });
+  } catch (error) {
+    if (isAppError(error)) {
+      throw error;
+    }
+
+    throw new InternalAppError("Unable to persist processed PDF output", {
+      code: "PDF_OUTPUT_WRITE_FAILED",
+      logContext: {
+        cause:
+          error instanceof Error ? error.message : "Unknown output write failure",
+        outputKey,
+      },
+    });
+  }
 
   return {
     outputKey,

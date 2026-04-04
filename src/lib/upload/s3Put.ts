@@ -26,13 +26,20 @@ export type UploadedFileResult = {
 };
 
 type PresignResponse = {
+  error?: {
+    code: string;
+    message: string;
+  };
   fileId: string;
   headers?: Record<string, string>;
   uploadUrl: string;
 };
 
 type CompleteResponse = {
-  error?: string;
+  error?: {
+    code: string;
+    message: string;
+  };
   retryable?: boolean;
 };
 
@@ -132,12 +139,14 @@ async function presignFile(
     signal,
   });
 
-  const payload = await parseJsonSafe<{ error?: string } & PresignResponse>(
-    response
-  );
+  const payload = await parseJsonSafe<PresignResponse>(response);
 
   if (!response.ok || !payload?.fileId || !payload.uploadUrl) {
-    throw new Error(payload?.error || "Unable to create upload URL");
+    throw new Error(
+      payload?.error?.message ||
+        payload?.error?.code ||
+        "Unable to create upload URL"
+    );
   }
 
   return {
@@ -237,7 +246,10 @@ async function completeUpload(
   const payload = await parseJsonSafe<CompleteResponse>(response);
 
   if (!response.ok) {
-    const message = payload?.error || "Unable to verify upload";
+    const message =
+      payload?.error?.message ||
+      payload?.error?.code ||
+      "Unable to verify upload";
     const error = new Error(message) as Error & { retryable?: boolean };
     error.retryable = Boolean(payload?.retryable);
     throw error;

@@ -11,13 +11,25 @@ const parseCompleteUploadInput = jest.fn();
 const parseCompleteUploadJson = jest.fn();
 const verifyGuestCookieValue = jest.fn();
 const UploadCompletionError = class UploadCompletionError extends Error {
+  __appErrorBrand = true as const;
+  code: string;
+  httpStatus: number;
   retryable: boolean;
   status: number;
+  userMessage: string;
 
-  constructor(message: string, status: number, retryable = false) {
+  constructor(
+    message: string,
+    status: number,
+    retryable = false,
+    code = status === 409 ? "UPLOAD_CONFLICT" : "UPLOAD_INVALID_REQUEST"
+  ) {
     super(message);
+    this.code = code;
+    this.httpStatus = status;
     this.retryable = retryable;
     this.status = status;
+    this.userMessage = message;
   }
 };
 
@@ -65,6 +77,7 @@ describe("/api/upload/complete", () => {
     jest.doMock("@/lib/guest", () => ({
       GUEST_ID_COOKIE: "guestId",
       INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+      INTERNAL_GUEST_ID_TRUST_HEADER: "x-ulazytools-guest-trusted",
       isGuestId: (value: string) =>
         /^[0-9a-f-]{36}$/i.test(value),
       verifyGuestCookieValue: (...args: unknown[]) => verifyGuestCookieValue(...args),
@@ -240,6 +253,7 @@ describe("/api/upload/complete", () => {
       },
       headers: new Headers({
         "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+        "x-ulazytools-guest-trusted": "1",
       }),
       json: async () => ({
         etag: "etag-forwarded",
@@ -249,6 +263,42 @@ describe("/api/upload/complete", () => {
 
     expect(response.status).toBe(200);
     expect(verifyGuestCookieValue).not.toHaveBeenCalled();
+  });
+
+  it("ignores an untrusted forwarded guest identity", async () => {
+    auth.mockResolvedValue(null);
+    verifyGuestCookieValue.mockResolvedValue("guest-123");
+    findUnique.mockResolvedValue({
+      checksum: null,
+      guestId: "guest-123",
+      id: "file-untrusted",
+      objectKey: "uploads/2026/04/file-untrusted/untrusted.pdf",
+      sizeBytes: BigInt(200),
+      status: "PENDING_UPLOAD",
+      userId: null,
+    });
+    loadVerifiedObjectMetadata.mockResolvedValue({
+      etag: "etag-untrusted",
+      size: BigInt(200),
+    });
+
+    const { POST } = await import("@/app/api/upload/complete/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(() => ({ value: "guest-123.signature" })),
+      },
+      headers: new Headers({
+        "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+      }),
+      json: async () => ({
+        etag: "etag-untrusted",
+        fileId: "file-untrusted",
+      }),
+    } as never);
+
+    expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).toHaveBeenCalledWith("guest-123.signature");
   });
 
   it("rejects non-owner callers", async () => {
@@ -290,7 +340,12 @@ describe("/api/upload/complete", () => {
       userId: "user-123",
     });
     loadVerifiedObjectMetadata.mockRejectedValue(
-      new UploadCompletionError("UPLOAD_NOT_VISIBLE_YET", 409, true)
+      new UploadCompletionError(
+        "Upload is not visible yet",
+        409,
+        true,
+        "UPLOAD_NOT_VISIBLE_YET"
+      )
     );
 
     const { POST } = await import("@/app/api/upload/complete/route");
@@ -308,7 +363,10 @@ describe("/api/upload/complete", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      error: "UPLOAD_NOT_VISIBLE_YET",
+      error: {
+        code: "UPLOAD_NOT_VISIBLE_YET",
+        message: "Upload is not visible yet",
+      },
       retryable: true,
     });
   });
@@ -407,7 +465,10 @@ describe("/api/upload/complete", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Invalid state transition",
+      error: {
+        code: "INVALID_STATE_TRANSITION",
+        message: "Invalid state transition",
+      },
     });
   });
 });

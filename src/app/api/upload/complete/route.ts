@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { toErrorResponse } from "@/app/api/_utils/http";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getRetentionEnv } from "@/lib/env";
 import {
+  ConflictError,
+  InternalAppError,
+  NotFoundError,
+} from "@/lib/errors";
+import {
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
+  INTERNAL_GUEST_ID_TRUST_HEADER,
   isGuestId,
   verifyGuestCookieValue,
 } from "@/lib/guest";
@@ -23,20 +30,17 @@ const FILE_OBJECT_PENDING_UPLOAD = "PENDING_UPLOAD";
 const FILE_OBJECT_READY = "READY";
 const FILE_OBJECT_FAILED = "FAILED";
 
-function buildResponse(
-  body: Record<string, unknown>,
-  init?: { status?: number }
-) {
-  return NextResponse.json(body, init);
-}
-
 export async function POST(request: NextRequest) {
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
   const userId = session?.user?.id;
   const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const trustedGuestHeader =
+    request.headers.get(INTERNAL_GUEST_ID_TRUST_HEADER) === "1";
   const trustedGuestId =
-    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+    trustedGuestHeader && forwardedGuestId && isGuestId(forwardedGuestId)
+      ? forwardedGuestId
+      : null;
   const guestId = userId
     ? undefined
     : trustedGuestId ||
@@ -65,7 +69,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (!file) {
-      return buildResponse({ error: "File not found" }, { status: 404 });
+      return toErrorResponse(
+        new NotFoundError("File not found", { code: "FILE_NOT_FOUND" })
+      );
     }
 
     const isAuthorizedUser = Boolean(userId && file.userId === userId);
@@ -74,13 +80,17 @@ export async function POST(request: NextRequest) {
     );
 
     if (!isAuthorizedUser && !isAuthorizedGuest) {
-      return buildResponse({ error: "File not found" }, { status: 404 });
+      return toErrorResponse(
+        new NotFoundError("File not found", { code: "FILE_NOT_FOUND" })
+      );
     }
 
     if (file.status !== FILE_OBJECT_PENDING_UPLOAD) {
-      return buildResponse(
-        { error: "Invalid state transition" },
-        { status: 400 }
+      return toErrorResponse(
+        new ConflictError("Invalid state transition", {
+          code: "INVALID_STATE_TRANSITION",
+          httpStatus: 400,
+        })
       );
     }
 
@@ -105,7 +115,11 @@ export async function POST(request: NextRequest) {
         "Upload completion failed verification"
       );
 
-      return buildResponse({ error: "SIZE_MISMATCH" }, { status: 409 });
+      return toErrorResponse(
+        new ConflictError("Uploaded file size did not match expectations", {
+          code: "SIZE_MISMATCH",
+        })
+      );
     }
 
     if (!metadata.etag || metadata.etag !== body.etag) {
@@ -127,7 +141,11 @@ export async function POST(request: NextRequest) {
         "Upload completion failed verification"
       );
 
-      return buildResponse({ error: "ETAG_MISMATCH" }, { status: 409 });
+      return toErrorResponse(
+        new ConflictError("Uploaded file checksum did not match expectations", {
+          code: "ETAG_MISMATCH",
+        })
+      );
     }
 
     const expiresAt = new Date(
@@ -154,7 +172,7 @@ export async function POST(request: NextRequest) {
       "Upload verified successfully"
     );
 
-    return buildResponse({ ok: true });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof UploadCompletionError) {
       log.warn(
@@ -165,13 +183,11 @@ export async function POST(request: NextRequest) {
         error.message
       );
 
-      return buildResponse(
-        {
-          error: error.message,
+      return toErrorResponse(error, {
+        extraBody: {
           retryable: error.retryable,
         },
-        { status: error.status }
-      );
+      });
     }
 
     log.error(
@@ -182,12 +198,15 @@ export async function POST(request: NextRequest) {
       "Upload completion verification failed"
     );
 
-    return buildResponse(
+    return toErrorResponse(
+      new InternalAppError("Unable to verify upload", {
+        code: "UPLOAD_VERIFICATION_FAILED",
+      }),
       {
-        error: "UPLOAD_VERIFICATION_FAILED",
-        retryable: true,
-      },
-      { status: 500 }
+        extraBody: {
+          retryable: true,
+        },
+      }
     );
   }
 }

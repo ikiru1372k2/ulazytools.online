@@ -86,4 +86,34 @@ describe("processPdfJob", () => {
       "Stub processing PDF job"
     );
   });
+
+  it("preserves typed app errors from the output write path", async () => {
+    findUnique.mockResolvedValue({
+      guestId: null,
+      id: "job-123",
+      inputRef: "uploads/2026/04/job-123/input.pdf",
+      type: "process",
+      userId: "user-123",
+    });
+
+    const { ValidationError } = await import("@/lib/errors");
+    const typedError = new ValidationError("Output object key is invalid", {
+      code: "OUTPUT_KEY_INVALID",
+      httpStatus: 409,
+    });
+    uploadBuffer.mockRejectedValue(typedError);
+
+    const { processPdfJob } = await import("@/server/jobs/processPdfJob");
+
+    await expect(
+      processPdfJob({
+        jobId: "job-123",
+        requestId: "req-123",
+        type: "process",
+      })
+    ).rejects.toMatchObject({
+      code: "OUTPUT_KEY_INVALID",
+      userMessage: "Output object key is invalid",
+    });
+  });
 });

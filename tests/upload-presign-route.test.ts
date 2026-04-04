@@ -376,7 +376,10 @@ describe("/api/upload/presign", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Only PDF uploads are allowed",
+      error: {
+        code: "UPLOAD_INVALID_TYPE",
+        message: "Only PDF uploads are allowed",
+      },
     });
     expect(create).not.toHaveBeenCalled();
   });
@@ -414,7 +417,10 @@ describe("/api/upload/presign", () => {
 
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
-      error: "Unable to create upload URL",
+      error: {
+        code: "UPLOAD_PRESIGN_FAILED",
+        message: "Unable to create upload URL",
+      },
     });
     expect(error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -447,7 +453,10 @@ describe("/api/upload/presign", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("17");
     await expect(response.json()).resolves.toEqual({
-      error: "RATE_LIMITED",
+      error: {
+        code: "RATE_LIMITED",
+        message: "Too many requests. Please try again later.",
+      },
     });
     expect(create).not.toHaveBeenCalled();
   });

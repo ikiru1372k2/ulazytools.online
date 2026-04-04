@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { toErrorResponse } from "@/app/api/_utils/http";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { GoneError, InternalAppError, NotFoundError, RateLimitError } from "@/lib/errors";
 import {
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
@@ -65,7 +67,9 @@ export async function GET(
   const jobId = context.params.jobId?.trim();
 
   if (!jobId) {
-    return buildResponse({ error: "Not found" }, { status: 404 });
+    return toErrorResponse(new NotFoundError(), {
+      cacheControl: "no-store",
+    });
   }
 
   const forwardedGuestId = request.headers
@@ -113,11 +117,20 @@ export async function GET(
     });
 
     if (!job || !canAccessJob(job, { guestId, userId })) {
-      return buildResponse({ error: "Not found" }, { status: 404 });
+      return toErrorResponse(new NotFoundError(), {
+        cacheControl: "no-store",
+      });
     }
 
     if (isJobExpired(job)) {
-      return buildResponse({ error: "JOB_EXPIRED" }, { status: 410 });
+      return toErrorResponse(
+        new GoneError("Job output has expired", {
+          code: "JOB_EXPIRED",
+        }),
+        {
+          cacheControl: "no-store",
+        }
+      );
     }
 
     const projection = await toSafeJobProjection(job);
@@ -137,15 +150,9 @@ export async function GET(
         "Job status request was rate limited"
       );
 
-      return buildResponse(
-        {
-          error: "RATE_LIMITED",
-        },
-        {
-          retryAfterSeconds: error.retryAfterSeconds,
-          status: 429,
-        }
-      );
+      return toErrorResponse(new RateLimitError(error.retryAfterSeconds), {
+        cacheControl: "no-store",
+      });
     }
 
     log.error(
@@ -157,11 +164,13 @@ export async function GET(
       "Failed to load job status"
     );
 
-    return buildResponse(
+    return toErrorResponse(
+      new InternalAppError("Unable to load job status", {
+        code: "JOB_STATUS_UNAVAILABLE",
+      }),
       {
-        error: "Unable to load job status",
-      },
-      { status: 500 }
+        cacheControl: "no-store",
+      }
     );
   }
 }
