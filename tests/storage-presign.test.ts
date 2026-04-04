@@ -1,9 +1,11 @@
 describe("storage presign helpers", () => {
   const capturedGetInputs: unknown[] = [];
+  const capturedPutInputs: unknown[] = [];
 
   beforeEach(() => {
     jest.resetModules();
     capturedGetInputs.length = 0;
+    capturedPutInputs.length = 0;
     process.env.S3_ACCESS_KEY_ID = "test-access-key";
     process.env.S3_BUCKET = "test-bucket";
     process.env.S3_ENDPOINT = "http://localhost:9000";
@@ -36,6 +38,7 @@ describe("storage presign helpers", () => {
 
         constructor(input: unknown) {
           this.input = input;
+          capturedPutInputs.push(input);
         }
       }
 
@@ -78,6 +81,14 @@ describe("storage presign helpers", () => {
       },
       uploadUrl: "https://example.com/upload",
     });
+    expect(capturedPutInputs).toContainEqual(
+      expect.objectContaining({
+        Bucket: "test-bucket",
+        ContentType: "application/pdf",
+        Key: "uploads/test.pdf",
+        Tagging: undefined,
+      })
+    );
   });
 
   it("rejects a non-positive presign TTL", async () => {
@@ -130,5 +141,59 @@ describe("storage presign helpers", () => {
       etag: "etag-123",
       size: BigInt(1234),
     });
+  });
+
+  it("includes object tags when generating a PUT presign", async () => {
+    const { presignPut } = await import("@/lib/storage");
+
+    await expect(
+      presignPut("uploads/test.pdf", "application/pdf", 60, {
+        tags: {
+          app: "ulazytoolsa",
+          expiresAt: "2026-04-11T12:00:00.000Z",
+        },
+      })
+    ).resolves.toEqual({
+      headers: {
+        "Content-Type": "application/pdf",
+      },
+      uploadUrl: "https://example.com/upload",
+    });
+    expect(capturedPutInputs).toContainEqual(
+      expect.objectContaining({
+        Key: "uploads/test.pdf",
+        Tagging: "app=ulazytoolsa&expiresAt=2026-04-11T12%3A00%3A00.000Z",
+      })
+    );
+  });
+
+  it("includes object tags when uploading a buffer directly", async () => {
+    const { uploadBuffer } = await import("@/lib/storage");
+
+    await expect(
+      uploadBuffer(
+        "outputs/job-123/processed.pdf",
+        Buffer.from("pdf-bytes"),
+        "application/pdf",
+        {
+          tags: {
+            app: "ulazytoolsa",
+            jobId: "job-123",
+          },
+        }
+      )
+    ).resolves.toEqual({
+      bucket: "test-bucket",
+      contentType: "application/pdf",
+      etag: undefined,
+      key: "outputs/job-123/processed.pdf",
+      size: 9,
+    });
+    expect(capturedPutInputs).toContainEqual(
+      expect.objectContaining({
+        Key: "outputs/job-123/processed.pdf",
+        Tagging: "app=ulazytoolsa&jobId=job-123",
+      })
+    );
   });
 });

@@ -6,13 +6,13 @@ import {
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import {
-  buildUploadKey,
   exists,
   getObjectStream,
   presignGet,
   remove,
   uploadBuffer,
 } from "../src/lib/storage-core";
+import { buildObjectKey } from "../src/lib/objectKey";
 
 function getRequiredEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -98,7 +98,11 @@ async function main() {
   );
   const expectedDigest = sha256(payload);
   const jobId = `storage-smoke-${Date.now()}`;
-  const key = buildUploadKey(jobId, "roundtrip.txt");
+  const key = buildObjectKey({
+    filename: "roundtrip.txt",
+    jobId,
+    kind: "upload",
+  });
 
   console.log(`Uploading to ${bucket}/${key}`);
   await uploadBuffer(key, payload, "text/plain; charset=utf-8");

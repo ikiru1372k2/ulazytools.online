@@ -1,7 +1,6 @@
 import "server-only";
 
 export {
-  buildUploadKey,
   exists,
   getStorageBucket,
   getObjectMetadata,
@@ -10,9 +9,11 @@ export {
   presignPut,
   remove,
   type PresignedGetOptions,
+  type PresignedPutOptions,
   StorageObjectNotFoundError,
   type ObjectMetadata,
   uploadBuffer,
+  type UploadBufferOptions,
   type PresignedUploadResult,
   type StoredObject,
   type UploadResult,

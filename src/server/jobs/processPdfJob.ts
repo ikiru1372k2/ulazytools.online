@@ -2,6 +2,8 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logger";
+import { buildObjectKey, buildObjectTags } from "@/lib/objectKey";
+import { uploadBuffer } from "@/lib/storage";
 
 import type { PdfJobPayload } from "@/lib/queue";
 
@@ -10,9 +12,10 @@ export type ProcessPdfJobResult = {
   userId: string | null;
 };
 
-function buildOutputKey(jobId: string) {
-  return `outputs/${jobId}/processed.pdf`;
-}
+const STUB_PDF_BYTES = Buffer.from(
+  "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n",
+  "utf8"
+);
 
 export async function processPdfJob(
   payload: PdfJobPayload
@@ -27,6 +30,7 @@ export async function processPdfJob(
       id: payload.jobId,
     },
     select: {
+      guestId: true,
       id: true,
       inputRef: true,
       type: true,
@@ -64,8 +68,22 @@ export async function processPdfJob(
     "Stub processing PDF job"
   );
 
+  const outputKey = buildObjectKey({
+    filename: "processed.pdf",
+    guestId: dbJob.guestId,
+    jobId: dbJob.id,
+    kind: "output",
+    userId: dbJob.userId,
+  });
+
+  await uploadBuffer(outputKey, STUB_PDF_BYTES, "application/pdf", {
+    tags: buildObjectTags({
+      jobId: dbJob.id,
+    }),
+  });
+
   return {
-    outputKey: buildOutputKey(dbJob.id),
+    outputKey,
     userId: dbJob.userId,
   };
 }
