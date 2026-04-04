@@ -5,6 +5,7 @@ import {
   getGuestCookieOptions,
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
+  INTERNAL_GUEST_ID_TRUST_HEADER,
   resolveGuestSession,
   serializeGuestCookie,
 } from "@/lib/guest";
@@ -29,6 +30,8 @@ export default async function middleware(req: NextRequest) {
   );
   const headers = new Headers(req.headers);
   headers.set(REQUEST_ID_HEADER, requestId);
+  headers.delete(INTERNAL_GUEST_ID_HEADER);
+  headers.delete(INTERNAL_GUEST_ID_TRUST_HEADER);
   const shouldEnsureGuestCookie = !hasSessionCookie(req);
   const guestSession = shouldEnsureGuestCookie
     ? await resolveGuestSession(req.cookies.get(GUEST_ID_COOKIE)?.value)
@@ -36,8 +39,10 @@ export default async function middleware(req: NextRequest) {
 
   if (guestSession) {
     headers.set(INTERNAL_GUEST_ID_HEADER, guestSession.guestId);
+    headers.set(INTERNAL_GUEST_ID_TRUST_HEADER, "1");
   } else {
     headers.delete(INTERNAL_GUEST_ID_HEADER);
+    headers.delete(INTERNAL_GUEST_ID_TRUST_HEADER);
   }
 
   const applyCommonHeadersAndCookies = async (

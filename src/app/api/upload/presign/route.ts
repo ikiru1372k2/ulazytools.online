@@ -8,6 +8,7 @@ import {
   getGuestCookieOptions,
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
+  INTERNAL_GUEST_ID_TRUST_HEADER,
   isGuestId,
   resolveGuestSession,
   serializeGuestCookie,
@@ -23,6 +24,7 @@ import {
   UploadValidationError,
   validateUpload,
 } from "@/server/uploads/presignPolicy";
+import { RateLimitExceededError } from "@/server/rateLimit";
 
 const FILE_OBJECT_PENDING_UPLOAD = "PENDING_UPLOAD";
 
@@ -35,13 +37,32 @@ function getClientIp(request: NextRequest) {
   return request.headers.get("x-real-ip")?.trim() || undefined;
 }
 
+function buildRateLimitedResponse(retryAfterSeconds: number) {
+  const response = NextResponse.json(
+    {
+      error: "RATE_LIMITED",
+    },
+    { status: 429 }
+  );
+
+  response.headers.set("Retry-After", String(retryAfterSeconds));
+
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
   const userId = session?.user?.id;
-  const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const forwardedGuestId = request.headers
+    .get(INTERNAL_GUEST_ID_HEADER)
+    ?.trim();
+  const trustedGuestHeader =
+    request.headers.get(INTERNAL_GUEST_ID_TRUST_HEADER) === "1";
   const trustedGuestId =
-    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+    trustedGuestHeader && forwardedGuestId && isGuestId(forwardedGuestId)
+      ? forwardedGuestId
+      : null;
   const guestSession = userId
     ? null
     : trustedGuestId
@@ -121,6 +142,18 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      log.warn(
+        {
+          guestId: guestSession?.guestId,
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+        "Upload presign request was rate limited"
+      );
+
+      return buildRateLimitedResponse(error.retryAfterSeconds);
+    }
+
     if (error instanceof UploadValidationError) {
       log.warn(
         {

@@ -51,6 +51,15 @@ const queueEnvSchema = z.object({
   REDIS_URL: nonEmptyString,
 });
 
+const rateLimitEnvSchema = z.object({
+  RATE_LIMIT_JOB_STATUS_LIMIT: z.coerce.number().int().positive(),
+  RATE_LIMIT_JOB_STATUS_WINDOW_SECONDS: z.coerce.number().int().positive(),
+  RATE_LIMIT_UPLOAD_PRESIGN_LIMIT: z.coerce.number().int().positive(),
+  RATE_LIMIT_UPLOAD_PRESIGN_WINDOW_SECONDS: z.coerce.number()
+    .int()
+    .positive(),
+});
+
 const storageEnvSchema = z.object({
   S3_ACCESS_KEY_ID: nonEmptyString,
   S3_BUCKET: nonEmptyString,
@@ -78,6 +87,7 @@ const authEnvSchema = z.object({
 
 type AppEnv = z.infer<typeof appEnvSchema>;
 type QueueEnv = z.infer<typeof queueEnvSchema>;
+type RateLimitEnv = z.infer<typeof rateLimitEnvSchema>;
 type StorageEnv = z.infer<typeof storageEnvSchema>;
 type UploadEnv = z.infer<typeof uploadEnvSchema>;
 type GuestEnv = z.infer<typeof guestEnvSchema>;
@@ -92,6 +102,7 @@ type AuthEnv = {
 
 let appEnvCache: AppEnv | undefined;
 let queueEnvCache: QueueEnv | undefined;
+let rateLimitEnvCache: RateLimitEnv | undefined;
 let storageEnvCache: StorageEnv | undefined;
 let uploadEnvCache: UploadEnv | undefined;
 let guestEnvCache: GuestEnv | undefined;
@@ -105,6 +116,11 @@ export function getAppEnv() {
 export function getQueueEnv() {
   queueEnvCache ??= parseEnv(queueEnvSchema, "queue");
   return queueEnvCache;
+}
+
+export function getRateLimitEnv() {
+  rateLimitEnvCache ??= parseEnv(rateLimitEnvSchema, "rate limit");
+  return rateLimitEnvCache;
 }
 
 export function getStorageEnv() {
@@ -148,4 +164,12 @@ export function getAuthEnv() {
   return authEnvCache;
 }
 
-export type { AppEnv, AuthEnv, GuestEnv, QueueEnv, StorageEnv, UploadEnv };
+export type {
+  AppEnv,
+  AuthEnv,
+  GuestEnv,
+  QueueEnv,
+  RateLimitEnv,
+  StorageEnv,
+  UploadEnv,
+};

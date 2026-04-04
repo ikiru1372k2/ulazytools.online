@@ -8,6 +8,14 @@ const error = jest.fn();
 const presignGet = jest.fn();
 const assertJobStatusAllowed = jest.fn();
 const verifyGuestCookieValue = jest.fn();
+const MockRateLimitExceededError = class RateLimitExceededError extends Error {
+  retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super("RATE_LIMITED");
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+};
 
 jest.mock("next/server", () => ({
   NextResponse: {
@@ -51,12 +59,16 @@ describe("/api/jobs/[jobId]", () => {
     jest.doMock("@/lib/guest", () => ({
       GUEST_ID_COOKIE: "guestId",
       INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+      INTERNAL_GUEST_ID_TRUST_HEADER: "x-ulazytools-guest-trusted",
       isGuestId: (value: string) =>
         /^[0-9a-f-]{36}$/i.test(value),
       verifyGuestCookieValue: (...args: unknown[]) => verifyGuestCookieValue(...args),
     }));
     jest.doMock("@/server/jobs/rateLimit", () => ({
       assertJobStatusAllowed,
+    }));
+    jest.doMock("@/server/rateLimit", () => ({
+      RateLimitExceededError: MockRateLimitExceededError,
     }));
     jest.doMock(
       "pino",
@@ -319,6 +331,7 @@ describe("/api/jobs/[jobId]", () => {
         },
         headers: new Headers({
           "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+          "x-ulazytools-guest-trusted": "1",
         }),
       } as never,
       { params: { jobId: "job-123" } }
@@ -331,6 +344,58 @@ describe("/api/jobs/[jobId]", () => {
       ip: undefined,
       userId: undefined,
     });
+  });
+
+  it("ignores an untrusted forwarded guest identity", async () => {
+    auth.mockResolvedValue(null);
+    verifyGuestCookieValue.mockResolvedValue("guest-123");
+    findUnique.mockResolvedValue(
+      buildJob({
+        guestId: "guest-123",
+        userId: null,
+      })
+    );
+
+    const { GET } = await import("@/app/api/jobs/[jobId]/route");
+
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(() => ({ value: "guest-123.signature" })),
+        },
+        headers: new Headers({
+          "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+        }),
+      } as never,
+      { params: { jobId: "job-123" } }
+    );
+
+    expect(response.status).toBe(200);
+    expect(verifyGuestCookieValue).toHaveBeenCalledWith("guest-123.signature");
+    expect(assertJobStatusAllowed).toHaveBeenCalledWith({
+      guestId: "guest-123",
+      ip: undefined,
+      userId: undefined,
+    });
+  });
+
+  it("does not rate limit a blank job id", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+
+    const { GET } = await import("@/app/api/jobs/[jobId]/route");
+
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(),
+        },
+        headers: new Headers(),
+      } as never,
+      { params: { jobId: "   " } }
+    );
+
+    expect(response.status).toBe(404);
+    expect(assertJobStatusAllowed).not.toHaveBeenCalled();
   });
 
   it("returns 404 for guest token mismatch", async () => {
@@ -545,5 +610,29 @@ describe("/api/jobs/[jobId]", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Unable to load job status",
     });
+  });
+
+  it("returns 429 with Retry-After when job status is rate limited", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+    assertJobStatusAllowed.mockRejectedValue(new MockRateLimitExceededError(9));
+
+    const { GET } = await import("@/app/api/jobs/[jobId]/route");
+
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(),
+        },
+        headers: new Headers(),
+      } as never,
+      { params: { jobId: "job-123" } }
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("9");
+    await expect(response.json()).resolves.toEqual({
+      error: "RATE_LIMITED",
+    });
+    expect(findUnique).not.toHaveBeenCalled();
   });
 });

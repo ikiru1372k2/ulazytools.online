@@ -9,11 +9,21 @@ const presignPut = jest.fn();
 const getStorageBucket = jest.fn();
 const resolveGuestSession = jest.fn();
 const serializeGuestCookie = jest.fn();
+const assertUploadPresignAllowed = jest.fn();
+const MockRateLimitExceededError = class RateLimitExceededError extends Error {
+  retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super("RATE_LIMITED");
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+};
 
 jest.mock("next/server", () => ({
   NextResponse: {
     json(body: unknown, init?: { status?: number }) {
       const cookieCalls: unknown[] = [];
+      const headers = new Headers();
 
       return {
         cookies: {
@@ -22,6 +32,7 @@ jest.mock("next/server", () => ({
           },
         },
         cookieCalls,
+        headers,
         async json() {
           return body;
         },
@@ -43,6 +54,7 @@ describe("/api/upload/presign", () => {
     getStorageBucket.mockReset();
     resolveGuestSession.mockReset();
     serializeGuestCookie.mockReset();
+    assertUploadPresignAllowed.mockReset();
 
     process.env.MAX_UPLOAD_MB = "10";
     process.env.PRESIGN_EXPIRES_SECONDS = "60";
@@ -59,6 +71,12 @@ describe("/api/upload/presign", () => {
       getStorageBucket,
       presignPut,
     }));
+    jest.doMock("@/server/uploads/rateLimit", () => ({
+      assertUploadPresignAllowed,
+    }));
+    jest.doMock("@/server/rateLimit", () => ({
+      RateLimitExceededError: MockRateLimitExceededError,
+    }));
     jest.doMock("@/lib/guest", () => ({
       getGuestCookieOptions: jest.fn(() => ({
         httpOnly: true,
@@ -68,6 +86,7 @@ describe("/api/upload/presign", () => {
       })),
       GUEST_ID_COOKIE: "guestId",
       INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+      INTERNAL_GUEST_ID_TRUST_HEADER: "x-ulazytools-guest-trusted",
       isGuestId: (value: string) =>
         /^[0-9a-f-]{36}$/i.test(value),
       resolveGuestSession: (...args: unknown[]) => resolveGuestSession(...args),
@@ -223,6 +242,7 @@ describe("/api/upload/presign", () => {
       },
       headers: new Headers({
         "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+        "x-ulazytools-guest-trusted": "1",
       }),
       json: async () => ({
         contentType: "application/pdf",
@@ -241,6 +261,44 @@ describe("/api/upload/presign", () => {
         }),
       })
     );
+  });
+
+  it("ignores an untrusted forwarded guest identity", async () => {
+    auth.mockResolvedValue(null);
+    resolveGuestSession.mockResolvedValue({
+      guestId: "guest-123",
+      isNew: false,
+      shouldSetCookie: false,
+    });
+    create.mockResolvedValue({
+      id: "file-untrusted",
+      objectKey: "uploads/2026/04/upload/untrusted.pdf",
+    });
+    presignPut.mockResolvedValue({
+      headers: {
+        "Content-Type": "application/pdf",
+      },
+      uploadUrl: "https://example.com/upload",
+    });
+    getStorageBucket.mockReturnValue("test-bucket");
+
+    const { POST } = await import("@/app/api/upload/presign/route");
+
+    await POST({
+      cookies: {
+        get: jest.fn(() => undefined),
+      },
+      headers: new Headers({
+        "x-ulazytools-guest-id": "00000000-0000-4000-8000-000000000123",
+      }),
+      json: async () => ({
+        contentType: "application/pdf",
+        filename: "untrusted.pdf",
+        sizeBytes: 2048,
+      }),
+    } as never);
+
+    expect(resolveGuestSession).toHaveBeenCalled();
   });
 
   it("returns 400 for invalid upload payloads", async () => {
@@ -310,5 +368,33 @@ describe("/api/upload/presign", () => {
       }),
       "Failed to create presigned upload"
     );
+  });
+
+  it("returns 429 with Retry-After when upload presign is rate limited", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+    assertUploadPresignAllowed.mockRejectedValue(
+      new MockRateLimitExceededError(17)
+    );
+
+    const { POST } = await import("@/app/api/upload/presign/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(),
+      },
+      headers: new Headers(),
+      json: async () => ({
+        contentType: "application/pdf",
+        filename: "report.pdf",
+        sizeBytes: 4096,
+      }),
+    } as never);
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("17");
+    await expect(response.json()).resolves.toEqual({
+      error: "RATE_LIMITED",
+    });
+    expect(create).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import {
   GUEST_ID_COOKIE,
   INTERNAL_GUEST_ID_HEADER,
+  INTERNAL_GUEST_ID_TRUST_HEADER,
   isGuestId,
   verifyGuestCookieValue,
 } from "@/lib/guest";
@@ -18,6 +19,7 @@ import {
   toSafeJobProjection,
 } from "@/server/jobs/jobAccess";
 import { assertJobStatusAllowed } from "@/server/jobs/rateLimit";
+import { RateLimitExceededError } from "@/server/rateLimit";
 
 function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -32,6 +34,7 @@ function buildResponse(
   body: Record<string, unknown>,
   init?: {
     etag?: string;
+    retryAfterSeconds?: number;
     status?: number;
   }
 ) {
@@ -45,6 +48,10 @@ function buildResponse(
     response.headers.set("ETag", init.etag);
   }
 
+  if (init?.retryAfterSeconds) {
+    response.headers.set("Retry-After", String(init.retryAfterSeconds));
+  }
+
   return response;
 }
 
@@ -55,15 +62,26 @@ export async function GET(
   const requestId = normalizeRequestId(request.headers.get(REQUEST_ID_HEADER));
   const session = await auth();
   const userId = session?.user?.id;
-  const forwardedGuestId = request.headers.get(INTERNAL_GUEST_ID_HEADER)?.trim();
+  const jobId = context.params.jobId?.trim();
+
+  if (!jobId) {
+    return buildResponse({ error: "Not found" }, { status: 404 });
+  }
+
+  const forwardedGuestId = request.headers
+    .get(INTERNAL_GUEST_ID_HEADER)
+    ?.trim();
+  const trustedGuestHeader =
+    request.headers.get(INTERNAL_GUEST_ID_TRUST_HEADER) === "1";
   const trustedGuestId =
-    forwardedGuestId && isGuestId(forwardedGuestId) ? forwardedGuestId : null;
+    trustedGuestHeader && forwardedGuestId && isGuestId(forwardedGuestId)
+      ? forwardedGuestId
+      : null;
   const guestId = userId
     ? undefined
     : trustedGuestId ||
       (await verifyGuestCookieValue(request.cookies.get(GUEST_ID_COOKIE)?.value)) ||
       undefined;
-  const jobId = context.params.jobId?.trim();
   const log = createLogger({
     requestId,
     userId,
@@ -75,10 +93,6 @@ export async function GET(
       ip: getClientIp(request),
       userId,
     });
-
-    if (!jobId) {
-      return buildResponse({ error: "Not found" }, { status: 404 });
-    }
 
     const job = await prisma.job.findUnique({
       where: {
@@ -113,6 +127,27 @@ export async function GET(
       status: 200,
     });
   } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      log.warn(
+        {
+          guestId,
+          jobId,
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+        "Job status request was rate limited"
+      );
+
+      return buildResponse(
+        {
+          error: "RATE_LIMITED",
+        },
+        {
+          retryAfterSeconds: error.retryAfterSeconds,
+          status: 429,
+        }
+      );
+    }
+
     log.error(
       {
         err: error,
