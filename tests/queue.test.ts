@@ -1,5 +1,6 @@
 describe("pdf queue payload normalization", () => {
   const add = jest.fn();
+  const incrementJobsCreatedCount = jest.fn();
   const upsertJobScheduler = jest.fn();
 
   beforeEach(() => {
@@ -8,7 +9,9 @@ describe("pdf queue payload normalization", () => {
     process.env.CLEANUP_BATCH_SIZE = "500";
     process.env.CLEANUP_REPEAT_EVERY_MS = "300000";
     process.env.FILE_RETENTION_HOURS = "168";
+    process.env.METRICS_ENABLED = "false";
     add.mockReset();
+    incrementJobsCreatedCount.mockReset();
     upsertJobScheduler.mockReset();
     jest.doMock(
       "bullmq",
@@ -21,6 +24,9 @@ describe("pdf queue payload normalization", () => {
       { virtual: true }
     );
     jest.doMock("ioredis", () => jest.fn(), { virtual: true });
+    jest.doMock("@/lib/metrics", () => ({
+      incrementJobsCreatedCount,
+    }));
   });
 
   it("requires a non-empty job ID", async () => {
@@ -67,5 +73,21 @@ describe("pdf queue payload normalization", () => {
         name: CLEANUP_JOB_NAME,
       })
     );
+  });
+
+  it("increments the jobs-created metric after enqueue succeeds", async () => {
+    add.mockResolvedValue({
+      id: "job-123",
+      name: "process",
+    });
+
+    const { enqueuePdfJob } = await import("@/lib/queue");
+
+    await enqueuePdfJob({
+      jobId: "job-123",
+      type: "process",
+    });
+
+    expect(incrementJobsCreatedCount).toHaveBeenCalledTimes(1);
   });
 });

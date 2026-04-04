@@ -66,6 +66,13 @@ const rateLimitEnvSchema = z.object({
     .positive(),
 });
 
+const metricsEnvSchema = z.object({
+  metricsEnabled: booleanString.default(false),
+  metricsToken: z
+    .union([z.string().trim().min(1), z.literal(""), z.undefined()])
+    .transform((value) => (value ? value : undefined)),
+});
+
 const storageEnvSchema = z.object({
   S3_ACCESS_KEY_ID: nonEmptyString,
   S3_BUCKET: nonEmptyString,
@@ -95,6 +102,10 @@ type AppEnv = z.infer<typeof appEnvSchema>;
 type QueueEnv = z.infer<typeof queueEnvSchema>;
 type RetentionEnv = z.infer<typeof retentionEnvSchema>;
 type RateLimitEnv = z.infer<typeof rateLimitEnvSchema>;
+type MetricsEnv = {
+  METRICS_ENABLED: boolean;
+  METRICS_TOKEN?: string;
+};
 type StorageEnv = z.infer<typeof storageEnvSchema>;
 type UploadEnv = z.infer<typeof uploadEnvSchema>;
 type GuestEnv = z.infer<typeof guestEnvSchema>;
@@ -111,6 +122,7 @@ let appEnvCache: AppEnv | undefined;
 let queueEnvCache: QueueEnv | undefined;
 let retentionEnvCache: RetentionEnv | undefined;
 let rateLimitEnvCache: RateLimitEnv | undefined;
+let metricsEnvCache: MetricsEnv | undefined;
 let storageEnvCache: StorageEnv | undefined;
 let uploadEnvCache: UploadEnv | undefined;
 let guestEnvCache: GuestEnv | undefined;
@@ -134,6 +146,24 @@ export function getRetentionEnv() {
 export function getRateLimitEnv() {
   rateLimitEnvCache ??= parseEnv(rateLimitEnvSchema, "rate limit");
   return rateLimitEnvCache;
+}
+
+export function getMetricsEnv() {
+  if (metricsEnvCache) {
+    return metricsEnvCache;
+  }
+
+  const parsed = parseEnv(metricsEnvSchema, "metrics", {
+    metricsEnabled: process.env.METRICS_ENABLED,
+    metricsToken: process.env.METRICS_TOKEN,
+  });
+
+  metricsEnvCache = {
+    METRICS_ENABLED: parsed.metricsEnabled,
+    METRICS_TOKEN: parsed.metricsToken,
+  };
+
+  return metricsEnvCache;
 }
 
 export function getStorageEnv() {
@@ -183,6 +213,7 @@ export type {
   GuestEnv,
   QueueEnv,
   RateLimitEnv,
+  MetricsEnv,
   RetentionEnv,
   StorageEnv,
   UploadEnv,

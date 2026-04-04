@@ -3,6 +3,7 @@ import "server-only";
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis, { type RedisOptions } from "ioredis";
 import { getQueueEnv } from "@/lib/env";
+import { incrementJobsCreatedCount } from "@/lib/metrics";
 import { normalizeRequestId } from "@/lib/request-id";
 
 const queueEnv = getQueueEnv();
@@ -125,6 +126,8 @@ export async function enqueuePdfJob(payload: PdfJobPayload) {
       `Queue job "${normalizedPayload.jobId}" already exists with type "${queuedJob.name}"`
     );
   }
+
+  await incrementJobsCreatedCount();
 
   return queuedJob;
 }

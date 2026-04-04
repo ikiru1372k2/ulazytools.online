@@ -1,6 +1,7 @@
 import { Worker, type Job as BullJob } from "bullmq";
 
 import { prisma } from "@/lib/db";
+import { incrementJobsFailedCount, observeJobLatencyMs } from "@/lib/metrics";
 import { toAppError } from "@/lib/errors";
 import { createLogger } from "@/lib/logger";
 import {
@@ -270,6 +271,29 @@ async function processQueueJob(job: BullJob<PdfJobPayload>) {
   }
 }
 
+function getJobDurationMs(
+  job: Pick<BullJob<PdfJobPayload>, "finishedOn" | "processedOn">
+) {
+  if (
+    typeof job.processedOn !== "number" ||
+    typeof job.finishedOn !== "number" ||
+    job.finishedOn < job.processedOn
+  ) {
+    return null;
+  }
+
+  return job.finishedOn - job.processedOn;
+}
+
+function isTerminalFailure(job?: Pick<BullJob<PdfJobPayload>, "attemptsMade" | "opts">) {
+  if (!job) {
+    return false;
+  }
+
+  const configuredAttempts = job.opts.attempts ?? 1;
+  return job.attemptsMade >= configuredAttempts;
+}
+
 const worker = new Worker<PdfJobPayload>(PDF_QUEUE_NAME, processQueueJob, {
   connection: workerConnection,
   concurrency: 1,
@@ -290,6 +314,12 @@ worker.on("completed", (job) => {
     },
     "BullMQ marked job as completed"
   );
+
+  const durationMs = getJobDurationMs(job);
+
+  if (durationMs !== null) {
+    void observeJobLatencyMs(durationMs);
+  }
 });
 
 worker.on("failed", (job, error) => {
@@ -307,6 +337,22 @@ worker.on("failed", (job, error) => {
     },
     "BullMQ marked job as failed"
   );
+
+  if (!isTerminalFailure(job)) {
+    return;
+  }
+
+  void incrementJobsFailedCount();
+
+  if (!job) {
+    return;
+  }
+
+  const durationMs = getJobDurationMs(job);
+
+  if (durationMs !== null) {
+    void observeJobLatencyMs(durationMs);
+  }
 });
 
 async function shutdown(resources: ManagedResource[], signal: string) {
