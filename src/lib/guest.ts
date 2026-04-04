@@ -2,6 +2,7 @@ import { getGuestEnv } from "@/lib/env";
 
 export const GUEST_ID_COOKIE = "guestId";
 export const INTERNAL_GUEST_ID_HEADER = "x-ulazytools-guest-id";
+export const INTERNAL_GUEST_ID_TRUST_HEADER = "x-ulazytools-guest-trusted";
 const GUEST_ID_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 const guestIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

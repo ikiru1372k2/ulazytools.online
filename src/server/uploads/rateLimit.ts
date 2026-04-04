@@ -1,5 +1,11 @@
 import "server-only";
 
+import { getRateLimitEnv } from "@/lib/env";
+import {
+  assertRateLimitAllowed,
+  type RateLimitIdentity,
+} from "@/server/rateLimit";
+
 export type UploadRateLimitIdentity = {
   guestId?: string;
   ip?: string;
@@ -7,7 +13,16 @@ export type UploadRateLimitIdentity = {
 };
 
 export async function assertUploadPresignAllowed(
-  _identity: UploadRateLimitIdentity
+  identity: UploadRateLimitIdentity
 ) {
-  // Intentional no-op seam for future limiter enforcement.
+  const env = getRateLimitEnv();
+
+  await assertRateLimitAllowed(
+    {
+      action: "upload_presign",
+      limit: env.RATE_LIMIT_UPLOAD_PRESIGN_LIMIT,
+      windowSeconds: env.RATE_LIMIT_UPLOAD_PRESIGN_WINDOW_SECONDS,
+    },
+    identity satisfies RateLimitIdentity
+  );
 }

@@ -40,6 +40,7 @@ const serializeGuestCookie = jest.fn();
 jest.mock("@/lib/guest", () => ({
   GUEST_ID_COOKIE: "guestId",
   INTERNAL_GUEST_ID_HEADER: "x-ulazytools-guest-id",
+  INTERNAL_GUEST_ID_TRUST_HEADER: "x-ulazytools-guest-trusted",
   getGuestCookieOptions: jest.fn(() => ({
     httpOnly: true,
     path: "/",
@@ -143,6 +144,9 @@ describe("middleware", () => {
     expect(response.request?.headers.get("x-ulazytools-guest-id")).toBe(
       "guest-123"
     );
+    expect(response.request?.headers.get("x-ulazytools-guest-trusted")).toBe(
+      "1"
+    );
   });
 
   it("does not reset a valid guest cookie unnecessarily", async () => {
@@ -163,6 +167,9 @@ describe("middleware", () => {
     expect(response.cookieCalls).toHaveLength(0);
     expect(response.request?.headers.get("x-ulazytools-guest-id")).toBe(
       "guest-123"
+    );
+    expect(response.request?.headers.get("x-ulazytools-guest-trusted")).toBe(
+      "1"
     );
   });
 
@@ -195,6 +202,9 @@ describe("middleware", () => {
     ]);
     expect(response.request?.headers.get("x-ulazytools-guest-id")).toBe(
       "guest-456"
+    );
+    expect(response.request?.headers.get("x-ulazytools-guest-trusted")).toBe(
+      "1"
     );
   });
 });
