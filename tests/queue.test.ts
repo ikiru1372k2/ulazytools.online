@@ -56,18 +56,18 @@ describe("pdf queue payload normalization", () => {
     });
   });
 
-  it("accepts merge as a supported PDF job type", async () => {
+  it("accepts pdf.merge as a supported PDF job type", async () => {
     const { normalizePdfJobPayload } = await import("@/lib/queue");
 
     expect(
       normalizePdfJobPayload({
         jobId: " job-merge ",
-        type: "merge",
+        type: "pdf.merge",
       })
     ).toEqual({
       jobId: "job-merge",
       requestId: undefined,
-      type: "merge",
+      type: "pdf.merge",
     });
   });
 

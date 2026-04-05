@@ -92,6 +92,7 @@ model Job {
   userId       String?
   guestId      String?
   fileObjectId String?
+  idempotencyKey String?
   type         String
   status       JobStatus   @default(PENDING)
   inputRef     String?
@@ -110,6 +111,8 @@ model Job {
   @@index([guestId])
   @@index([fileObjectId])
   @@index([status, createdAt])
+  @@unique([userId, idempotencyKey])
+  @@unique([guestId, idempotencyKey])
 }
 
 model JobEvent {

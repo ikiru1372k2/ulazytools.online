@@ -1,9 +1,14 @@
 export {};
 
+import { createHash } from "crypto";
+
 const auth = jest.fn();
-const findMany = jest.fn();
-const create = jest.fn();
-const update = jest.fn();
+const fileObjectFindMany = jest.fn();
+const jobCreate = jest.fn();
+const jobFindFirst = jest.fn();
+const jobUpdate = jest.fn();
+const jobEventCreate = jest.fn();
+const transaction = jest.fn();
 const enqueuePdfJob = jest.fn();
 const info = jest.fn();
 const error = jest.fn();
@@ -35,13 +40,28 @@ jest.mock("next/server", () => ({
   },
 }));
 
-describe("/api/jobs", () => {
+function getRequestFingerprint(input: {
+  inputFileIds: string[];
+  jobType: "pdf.merge";
+  options: {
+    pageOrder: number[];
+  };
+}) {
+  return createHash("sha256")
+    .update(JSON.stringify(input))
+    .digest("hex");
+}
+
+describe("/api/jobs/merge", () => {
   beforeEach(() => {
     jest.resetModules();
     auth.mockReset();
-    findMany.mockReset();
-    create.mockReset();
-    update.mockReset();
+    fileObjectFindMany.mockReset();
+    jobCreate.mockReset();
+    jobFindFirst.mockReset();
+    jobUpdate.mockReset();
+    jobEventCreate.mockReset();
+    transaction.mockReset();
     enqueuePdfJob.mockReset();
     info.mockReset();
     error.mockReset();
@@ -56,15 +76,27 @@ describe("/api/jobs", () => {
     process.env.RATE_LIMIT_UPLOAD_PRESIGN_LIMIT = "20";
     process.env.RATE_LIMIT_UPLOAD_PRESIGN_WINDOW_SECONDS = "60";
 
+    transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        job: {
+          create: jobCreate,
+          update: jobUpdate,
+        },
+        jobEvent: {
+          create: jobEventCreate,
+        },
+      })
+    );
+
     jest.doMock("@/lib/auth", () => ({ auth }));
     jest.doMock("@/lib/db", () => ({
       prisma: {
+        $transaction: transaction,
         fileObject: {
-          findMany,
+          findMany: fileObjectFindMany,
         },
         job: {
-          create,
-          update,
+          findFirst: jobFindFirst,
         },
       },
     }));
@@ -101,69 +133,83 @@ describe("/api/jobs", () => {
     );
   });
 
-  it("creates a merge job for the owning authenticated user", async () => {
+  it("creates a merge job, persists an event, and enqueues exactly once", async () => {
     auth.mockResolvedValue({ user: { id: "user-123" } });
-    findMany.mockResolvedValue([
-      { id: "file-1", objectKey: "uploads/first.pdf" },
-      { id: "file-2", objectKey: "uploads/second.pdf" },
+    jobFindFirst.mockResolvedValue(null);
+    fileObjectFindMany.mockResolvedValue([
+      { id: "file-1", mimeType: "application/pdf", objectKey: "uploads/first.pdf" },
+      { id: "file-2", mimeType: "application/pdf", objectKey: "uploads/second.pdf" },
     ]);
-    create.mockResolvedValue({
+    jobCreate.mockResolvedValue({
       id: "job-123",
     });
 
-    const { POST } = await import("@/app/api/jobs/route");
+    const { POST } = await import("@/app/api/jobs/merge/route");
 
     const response = await POST({
       cookies: {
         get: jest.fn(),
       },
       headers: new Headers({
+        "Idempotency-Key": "idem-123",
         "x-request-id": "req-123",
       }),
       json: async () => ({
-        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
-        jobType: "merge",
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
         options: {
-          includeBookmarks: true,
-          outputFilename: "merged.pdf",
+          pageOrder: [1, 0],
         },
       }),
     } as never);
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(201);
     await expect(response.json()).resolves.toEqual({
       jobId: "job-123",
       status: "pending",
     });
-    expect(findMany).toHaveBeenCalledWith({
+    expect(fileObjectFindMany).toHaveBeenCalledWith({
       select: {
         id: true,
+        mimeType: true,
         objectKey: true,
       },
       where: {
-        objectKey: {
-          in: ["uploads/first.pdf", "uploads/second.pdf"],
+        id: {
+          in: ["file-1", "file-2"],
         },
+        mimeType: "application/pdf",
         status: "READY",
         userId: "user-123",
       },
     });
-    expect(create).toHaveBeenCalledWith({
+    expect(jobCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        fileObjectId: "file-1",
+        fileObjectId: "file-2",
         guestId: null,
+        idempotencyKey: expect.stringMatching(/^[a-f0-9]{64}$/),
         status: "PENDING",
-        type: "merge",
+        type: "pdf.merge",
         userId: "user-123",
       }),
       select: {
         id: true,
       },
     });
+    expect(jobEventCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jobId: "job-123",
+        level: "info",
+        message: "Merge job created.",
+        metadata: expect.objectContaining({
+          isIdempotent: true,
+        }),
+      }),
+    });
     expect(enqueuePdfJob).toHaveBeenCalledWith({
       jobId: "job-123",
       requestId: "req-123",
-      type: "merge",
+      type: "pdf.merge",
     });
     expect(assertJobCreateAllowed).toHaveBeenCalledWith({
       guestId: undefined,
@@ -172,50 +218,213 @@ describe("/api/jobs", () => {
     });
   });
 
-  it("creates a merge job for the matching guest owner", async () => {
-    auth.mockResolvedValue(null);
-    verifyGuestCookieValue.mockResolvedValue("guest-123");
-    findMany.mockResolvedValue([
-      { id: "file-1", objectKey: "uploads/first.pdf" },
-      { id: "file-2", objectKey: "uploads/second.pdf" },
-    ]);
-    create.mockResolvedValue({
-      id: "job-guest",
+  it("returns the original job for the same idempotency key and actor", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+    const requestPayload = {
+      inputFileIds: ["file-1", "file-2"],
+      jobType: "pdf.merge" as const,
+      options: {
+        pageOrder: [0, 1],
+      },
+    };
+    jobFindFirst.mockResolvedValue({
+      id: "job-existing",
+      inputRef: JSON.stringify({
+        ...requestPayload,
+        requestFingerprint: getRequestFingerprint(requestPayload),
+      }),
+      status: "PENDING",
     });
 
-    const { POST } = await import("@/app/api/jobs/route");
+    const { POST } = await import("@/app/api/jobs/merge/route");
 
     const response = await POST({
       cookies: {
-        get: jest.fn(() => ({ value: "guest-123.signature" })),
+        get: jest.fn(),
       },
-      headers: new Headers(),
+      headers: new Headers({
+        "Idempotency-Key": "idem-123",
+      }),
+      json: async () => requestPayload,
+    } as never);
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({
+      jobId: "job-existing",
+      status: "pending",
+    });
+    expect(fileObjectFindMany).not.toHaveBeenCalled();
+    expect(enqueuePdfJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects reuse of the same idempotency key for a different payload", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+    const storedPayload = {
+      inputFileIds: ["file-1", "file-2"],
+      jobType: "pdf.merge" as const,
+      options: {
+        pageOrder: [0, 1],
+      },
+    };
+    jobFindFirst.mockResolvedValue({
+      id: "job-existing",
+      inputRef: JSON.stringify({
+        ...storedPayload,
+        requestFingerprint: getRequestFingerprint(storedPayload),
+      }),
+      status: "PENDING",
+    });
+
+    const { POST } = await import("@/app/api/jobs/merge/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(),
+      },
+      headers: new Headers({
+        "Idempotency-Key": "idem-123",
+      }),
       json: async () => ({
-        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
-        jobType: "merge",
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
         options: {
-          includeBookmarks: false,
+          pageOrder: [1, 0],
         },
       }),
     } as never);
 
-    expect(response.status).toBe(200);
-    expect(verifyGuestCookieValue).toHaveBeenCalledWith("guest-123.signature");
-    expect(create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        guestId: "guest-123",
-        userId: null,
-      }),
-      select: {
-        id: true,
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "IDEMPOTENCY_KEY_REUSED",
+        message:
+          "Idempotency key is already associated with a different merge request.",
       },
     });
   });
 
-  it("returns 400 for invalid payloads", async () => {
+  it("rejects reuse of the same idempotency key for a completed job", async () => {
     auth.mockResolvedValue({ user: { id: "user-123" } });
+    const requestPayload = {
+      inputFileIds: ["file-1", "file-2"],
+      jobType: "pdf.merge" as const,
+      options: {
+        pageOrder: [0, 1],
+      },
+    };
+    jobFindFirst.mockResolvedValue({
+      id: "job-existing",
+      inputRef: JSON.stringify({
+        ...requestPayload,
+        requestFingerprint: getRequestFingerprint(requestPayload),
+      }),
+      status: "SUCCEEDED",
+    });
 
-    const { POST } = await import("@/app/api/jobs/route");
+    const { POST } = await import("@/app/api/jobs/merge/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(),
+      },
+      headers: new Headers({
+        "Idempotency-Key": "idem-123",
+      }),
+      json: async () => requestPayload,
+    } as never);
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "IDEMPOTENCY_KEY_REUSED",
+        message:
+          "Idempotency key is already associated with a completed merge job. Use a new key to retry.",
+      },
+    });
+  });
+
+  it("does not collide across different actors using the same idempotency key", async () => {
+    auth
+      .mockResolvedValueOnce({ user: { id: "user-123" } })
+      .mockResolvedValueOnce({ user: { id: "user-456" } });
+    jobFindFirst
+      .mockResolvedValueOnce({
+        id: "job-user-1",
+        inputRef: JSON.stringify({
+          inputFileIds: ["file-1", "file-2"],
+          jobType: "pdf.merge",
+          options: {
+            pageOrder: [0, 1],
+          },
+          requestFingerprint: getRequestFingerprint({
+            inputFileIds: ["file-1", "file-2"],
+            jobType: "pdf.merge",
+            options: {
+              pageOrder: [0, 1],
+            },
+          }),
+        }),
+        status: "PENDING",
+      })
+      .mockResolvedValueOnce(null);
+    fileObjectFindMany.mockResolvedValue([
+      { id: "file-1", mimeType: "application/pdf", objectKey: "uploads/first.pdf" },
+      { id: "file-2", mimeType: "application/pdf", objectKey: "uploads/second.pdf" },
+    ]);
+    jobCreate.mockResolvedValue({
+      id: "job-user-2",
+    });
+
+    const { POST } = await import("@/app/api/jobs/merge/route");
+
+    const firstResponse = await POST({
+      cookies: {
+        get: jest.fn(),
+      },
+      headers: new Headers({
+        "Idempotency-Key": "idem-123",
+      }),
+      json: async () => ({
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
+        options: {
+          pageOrder: [0, 1],
+        },
+      }),
+    } as never);
+
+    const secondResponse = await POST({
+      cookies: {
+        get: jest.fn(),
+      },
+      headers: new Headers({
+        "Idempotency-Key": "idem-123",
+      }),
+      json: async () => ({
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
+        options: {
+          pageOrder: [0, 1],
+        },
+      }),
+    } as never);
+
+    await expect(firstResponse.json()).resolves.toEqual({
+      jobId: "job-user-1",
+      status: "pending",
+    });
+    await expect(secondResponse.json()).resolves.toEqual({
+      jobId: "job-user-2",
+      status: "pending",
+    });
+    expect(enqueuePdfJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 400 with validation details for invalid payloads", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+    jobFindFirst.mockResolvedValue(null);
+
+    const { POST } = await import("@/app/api/jobs/merge/route");
 
     const response = await POST({
       cookies: {
@@ -223,29 +432,38 @@ describe("/api/jobs", () => {
       },
       headers: new Headers(),
       json: async () => ({
-        inputKeys: ["uploads/only-one.pdf"],
-        jobType: "merge",
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
         options: {
-          includeBookmarks: true,
+          pageOrder: [0],
         },
       }),
     } as never);
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
+      details: [
+        {
+          message: "pageOrder length must match inputFileIds length.",
+          path: "options.pageOrder",
+        },
+      ],
       error: {
-        code: "INVALID_JOB_REQUEST",
-        message: "Select at least two uploaded PDFs.",
+        code: "INVALID_PAGE_ORDER",
+        message: "Page order must include each uploaded PDF exactly once.",
       },
     });
-    expect(findMany).not.toHaveBeenCalled();
+    expect(fileObjectFindMany).not.toHaveBeenCalled();
   });
 
   it("returns 404 when an uploaded file is missing or unauthorized", async () => {
     auth.mockResolvedValue({ user: { id: "user-123" } });
-    findMany.mockResolvedValue([{ id: "file-1", objectKey: "uploads/first.pdf" }]);
+    jobFindFirst.mockResolvedValue(null);
+    fileObjectFindMany.mockResolvedValue([
+      { id: "file-1", mimeType: "application/pdf", objectKey: "uploads/first.pdf" },
+    ]);
 
-    const { POST } = await import("@/app/api/jobs/route");
+    const { POST } = await import("@/app/api/jobs/merge/route");
 
     const response = await POST({
       cookies: {
@@ -253,10 +471,10 @@ describe("/api/jobs", () => {
       },
       headers: new Headers(),
       json: async () => ({
-        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
-        jobType: "merge",
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
         options: {
-          includeBookmarks: false,
+          pageOrder: [0, 1],
         },
       }),
     } as never);
@@ -270,18 +488,19 @@ describe("/api/jobs", () => {
     });
   });
 
-  it("marks the created job failed when enqueueing the worker job fails", async () => {
+  it("marks the created job failed and records a failure event when enqueueing fails", async () => {
     auth.mockResolvedValue({ user: { id: "user-123" } });
-    findMany.mockResolvedValue([
-      { id: "file-1", objectKey: "uploads/first.pdf" },
-      { id: "file-2", objectKey: "uploads/second.pdf" },
+    jobFindFirst.mockResolvedValue(null);
+    fileObjectFindMany.mockResolvedValue([
+      { id: "file-1", mimeType: "application/pdf", objectKey: "uploads/first.pdf" },
+      { id: "file-2", mimeType: "application/pdf", objectKey: "uploads/second.pdf" },
     ]);
-    create.mockResolvedValue({
+    jobCreate.mockResolvedValue({
       id: "job-stuck",
     });
     enqueuePdfJob.mockRejectedValue(new Error("queue unavailable"));
 
-    const { POST } = await import("@/app/api/jobs/route");
+    const { POST } = await import("@/app/api/jobs/merge/route");
 
     const response = await POST({
       cookies: {
@@ -289,16 +508,16 @@ describe("/api/jobs", () => {
       },
       headers: new Headers(),
       json: async () => ({
-        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
-        jobType: "merge",
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
         options: {
-          includeBookmarks: false,
+          pageOrder: [0, 1],
         },
       }),
     } as never);
 
     expect(response.status).toBe(500);
-    expect(update).toHaveBeenCalledWith({
+    expect(jobUpdate).toHaveBeenCalledWith({
       where: {
         id: "job-stuck",
       },
@@ -308,13 +527,20 @@ describe("/api/jobs", () => {
         status: "FAILED",
       }),
     });
+    expect(jobEventCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        jobId: "job-stuck",
+        level: "error",
+        message: "Merge job enqueue failed.",
+      }),
+    });
   });
 
   it("returns 429 when job creation is rate limited", async () => {
     auth.mockResolvedValue({ user: { id: "user-123" } });
     assertJobCreateAllowed.mockRejectedValue(new MockRateLimitExceededError(12));
 
-    const { POST } = await import("@/app/api/jobs/route");
+    const { POST } = await import("@/app/api/jobs/merge/route");
 
     const response = await POST({
       cookies: {
@@ -322,10 +548,10 @@ describe("/api/jobs", () => {
       },
       headers: new Headers(),
       json: async () => ({
-        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
-        jobType: "merge",
+        inputFileIds: ["file-1", "file-2"],
+        jobType: "pdf.merge",
         options: {
-          includeBookmarks: false,
+          pageOrder: [0, 1],
         },
       }),
     } as never);
@@ -338,6 +564,39 @@ describe("/api/jobs", () => {
         message: "Too many requests. Please try again later.",
       },
     });
-    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when fewer than two files are requested", async () => {
+    auth.mockResolvedValue({ user: { id: "user-123" } });
+
+    const { POST } = await import("@/app/api/jobs/merge/route");
+
+    const response = await POST({
+      cookies: {
+        get: jest.fn(),
+      },
+      headers: new Headers(),
+      json: async () => ({
+        inputFileIds: ["file-1"],
+        jobType: "pdf.merge",
+        options: {
+          pageOrder: [0],
+        },
+      }),
+    } as never);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      details: [
+        {
+          message: "Select at least two uploaded PDFs.",
+          path: "inputFileIds",
+        },
+      ],
+      error: {
+        code: "INVALID_JOB_REQUEST",
+        message: "Select at least two uploaded PDFs.",
+      },
+    });
   });
 });

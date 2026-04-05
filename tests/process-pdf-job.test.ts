@@ -117,17 +117,17 @@ describe("processPdfJob", () => {
     });
   });
 
-  it("writes a merge-specific output filename for merge jobs", async () => {
+  it("writes the default merged output filename for pdf.merge jobs", async () => {
     findUnique.mockResolvedValue({
       guestId: null,
       id: "job-merge",
       inputRef: JSON.stringify({
         options: {
-          outputFilename: "Quarterly Packet.pdf",
+          pageOrder: [0, 1],
         },
-        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
+        inputFileIds: ["file-1", "file-2"],
       }),
-      type: "merge",
+      type: "pdf.merge",
       userId: "user-123",
     });
     uploadBuffer.mockResolvedValue({
@@ -143,10 +143,10 @@ describe("processPdfJob", () => {
       processPdfJob({
         jobId: "job-merge",
         requestId: "req-merge",
-        type: "merge",
+        type: "pdf.merge",
       })
     ).resolves.toEqual({
-      outputKey: "outputs/job-merge/quarterly-packet.pdf",
+      outputKey: "outputs/job-merge/merged.pdf",
       userId: "user-123",
     });
   });

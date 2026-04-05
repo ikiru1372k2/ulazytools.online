@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 
 import PresignedUploader from "@/components/upload/PresignedUploader";
 import { useJobPoll } from "@/hooks/useJobPoll";
 import { createJob } from "@/lib/api/client";
-import { mergePdfOptionsSchema } from "@/lib/jobs/merge";
 import type { UploadedFileResult } from "@/lib/upload/s3Put";
 
 function getMergeStatusLabel(
@@ -27,33 +26,19 @@ function getMergeStatusLabel(
 
 export default function MergePage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileResult[]>([]);
-  const [outputFilename, setOutputFilename] = useState("");
-  const [includeBookmarks, setIncludeBookmarks] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
   const { data: job, error: jobError, isLoading, isPaused, isPolling } =
     useJobPoll(activeJobId, {
       enabled: Boolean(activeJobId),
     });
-
-  const parsedOptions = useMemo(
-    () =>
-      mergePdfOptionsSchema.safeParse({
-        includeBookmarks,
-        outputFilename: outputFilename.trim() || undefined,
-      }),
-    [includeBookmarks, outputFilename]
-  );
-  const optionsError = parsedOptions.success
-    ? null
-    : parsedOptions.error.issues[0]?.message || "Enter valid merge options.";
   const hasActiveJob =
     isSubmitting ||
     job?.status === "pending" ||
     job?.status === "processing";
-  const canSubmit =
-    uploadedFiles.length >= 2 && parsedOptions.success && !hasActiveJob;
+  const canSubmit = uploadedFiles.length >= 2 && !hasActiveJob;
   const statusLabel = job ? getMergeStatusLabel(job.status) : "Idle";
   const failedMessage =
     job?.status === "failed"
@@ -61,11 +46,6 @@ export default function MergePage() {
       : null;
 
   const handleStartMerge = async () => {
-    if (!parsedOptions.success) {
-      setSubmissionError(optionsError);
-      return;
-    }
-
     if (uploadedFiles.length < 2) {
       setSubmissionError("Upload at least two PDFs before starting the merge.");
       return;
@@ -73,12 +53,20 @@ export default function MergePage() {
 
     setIsSubmitting(true);
     setSubmissionError(null);
+    idempotencyKeyRef.current ??=
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `merge-${Date.now()}`;
 
     try {
       const response = await createJob({
-        inputKeys: uploadedFiles.map((file) => file.objectKey),
-        jobType: "merge",
-        options: parsedOptions.data,
+        inputFileIds: uploadedFiles.map((file) => file.fileId),
+        jobType: "pdf.merge",
+        options: {
+          pageOrder: uploadedFiles.map((_, index) => index),
+        },
+      }, {
+        idempotencyKey: idempotencyKeyRef.current,
       });
 
       setActiveJobId(response.jobId);
@@ -91,6 +79,13 @@ export default function MergePage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleUploadComplete = (completed: UploadedFileResult[]) => {
+    setUploadedFiles(completed);
+    setSubmissionError(null);
+    setActiveJobId(null);
+    idempotencyKeyRef.current = null;
   };
 
   return (
@@ -115,7 +110,7 @@ export default function MergePage() {
         allowDrop
         description="Add two or more PDFs, verify them one by one, then start a merge job from the same page."
         helperText="Drag PDFs here or browse. Only verified uploads will be included in the merge."
-        onComplete={setUploadedFiles}
+        onComplete={handleUploadComplete}
         title="Upload the PDFs you want to merge."
       />
 
@@ -130,9 +125,10 @@ export default function MergePage() {
                 Review inputs and start the merge.
               </h2>
               <p className="text-sm leading-7 text-slate-600">
-                Merges preserve the upload order shown above. Custom output
-                filenames are applied today, and bookmark preferences are stored
-                with the job for the merge worker to honor as processing evolves.
+                Merges preserve the upload order shown above. This route now
+                creates dedicated `pdf.merge` jobs and uses an idempotency key
+                so retried submissions resolve to the same job instead of
+                enqueueing duplicates.
               </p>
             </div>
 
@@ -150,44 +146,13 @@ export default function MergePage() {
               </p>
             </div>
 
-            <label className="block text-sm font-semibold text-slate-700">
-              Output filename
-              <input
-                className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-ink outline-none transition focus:border-slate-500"
-                onChange={(event) => setOutputFilename(event.target.value)}
-                placeholder="merged-contracts.pdf"
-                type="text"
-                value={outputFilename}
-              />
-            </label>
-
-            <label className="flex items-start gap-3 rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
-              <input
-                checked={includeBookmarks}
-                className="mt-1 h-4 w-4 rounded border-slate-300 text-signal focus:ring-signal"
-                onChange={(event) => setIncludeBookmarks(event.target.checked)}
-                type="checkbox"
-              />
-              <span>
-                <span className="block font-semibold text-ink">
-                  Preserve source bookmarks when available
-                </span>
-                <span className="mt-1 block text-slate-600">
-                  This preference is stored with the merge request so backend
-                  processing can honor it as the merge worker expands.
-                </span>
-              </span>
-            </label>
-
-            {optionsError ? (
-              <p
-                aria-live="polite"
-                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-                role="status"
-              >
-                {optionsError}
+            <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+              <p className="font-semibold text-ink">Merge order</p>
+              <p className="mt-1 text-slate-600">
+                Files are merged in the same order they are listed after upload.
+                Starting a new upload batch resets the pending merge request.
               </p>
-            ) : null}
+            </div>
 
             {submissionError ? (
               <p
