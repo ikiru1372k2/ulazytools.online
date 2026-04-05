@@ -9,7 +9,7 @@ export type MergePdfOptions = z.infer<typeof mergePdfOptionsSchema>;
 export const createJobRequestSchema = z.object({
   inputFileIds: z
     .array(z.string().trim().min(1))
-    .min(1, "Select at least one uploaded PDF.")
+    .min(2, "Select at least two uploaded PDFs.")
     .max(20, "Merge supports up to 20 PDFs at a time.")
     .refine(
       (inputFileIds) => new Set(inputFileIds).size === inputFileIds.length,

@@ -4,23 +4,10 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/db";
 import { NotFoundError, ValidationError } from "@/lib/errors";
+import { createJobRequestSchema } from "@/lib/jobs/merge";
 
 const FILE_OBJECT_READY = "READY";
-
-const rawCreateMergeJobSchema = z.object({
-  inputFileIds: z
-    .array(z.string().trim().min(1))
-    .min(1, "Select at least one uploaded PDF.")
-    .max(20, "Merge supports up to 20 PDFs at a time.")
-    .refine(
-      (inputFileIds) => new Set(inputFileIds).size === inputFileIds.length,
-      "Each uploaded PDF can only be included once."
-    ),
-  jobType: z.literal("pdf.merge"),
-  options: z.object({
-    pageOrder: z.array(z.number().int().nonnegative()).min(1),
-  }),
-});
+const PDF_MIME_TYPE = "application/pdf";
 
 export type ValidateJobInputAccess = {
   guestId?: string;
@@ -30,6 +17,7 @@ export type ValidateJobInputAccess = {
 export type ValidatedMergeJobInput = {
   files: Array<{
     id: string;
+    mimeType: string;
     objectKey: string;
   }>;
   inputFileIds: string[];
@@ -43,7 +31,7 @@ export async function parseAndValidateMergeJobInput(
   payload: unknown,
   access: ValidateJobInputAccess
 ): Promise<ValidatedMergeJobInput> {
-  const parsed = rawCreateMergeJobSchema.safeParse(payload);
+  const parsed = createJobRequestSchema.safeParse(payload);
 
   if (!parsed.success) {
     throw new ValidationError(
@@ -111,12 +99,14 @@ export async function parseAndValidateMergeJobInput(
   const files = await prisma.fileObject.findMany({
     select: {
       id: true,
+      mimeType: true,
       objectKey: true,
     },
     where: {
       id: {
         in: parsed.data.inputFileIds,
       },
+      mimeType: PDF_MIME_TYPE,
       status: FILE_OBJECT_READY,
       ...(access.userId
         ? {
@@ -147,10 +137,15 @@ export async function parseAndValidateMergeJobInput(
   }
 
   return {
-    files: orderedFiles as Array<{
-      id: string;
-      objectKey: string;
-    }>,
+    files: orderedFiles.filter(
+      (
+        file
+      ): file is {
+        id: string;
+        mimeType: string;
+        objectKey: string;
+      } => Boolean(file)
+    ),
     inputFileIds: parsed.data.inputFileIds,
     jobType: parsed.data.jobType,
     options: parsed.data.options,

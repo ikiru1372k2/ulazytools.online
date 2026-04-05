@@ -149,7 +149,7 @@ export default function MergePage() {
             <div className="rounded-[1.5rem] border border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
               <p className="font-semibold text-ink">Merge order</p>
               <p className="mt-1 text-slate-600">
-                Files are merged in the same order they finished uploading.
+                Files are merged in the same order they are listed after upload.
                 Starting a new upload batch resets the pending merge request.
               </p>
             </div>

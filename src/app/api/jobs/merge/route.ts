@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
@@ -20,6 +22,10 @@ import {
   verifyGuestCookieValue,
 } from "@/lib/guest";
 import { createLogger } from "@/lib/logger";
+import {
+  createJobRequestSchema,
+  type CreateJobRequest,
+} from "@/lib/jobs/merge";
 import { enqueuePdfJob } from "@/lib/queue";
 import { normalizeRequestId, REQUEST_ID_HEADER } from "@/lib/request-id";
 import {
@@ -33,6 +39,13 @@ const JOB_STATUS_FAILED = "FAILED";
 const JOB_STATUS_PENDING = "PENDING";
 const JOB_TYPE = "pdf.merge";
 const IDEMPOTENCY_HEADER = "idempotency-key";
+const IDEMPOTENCY_REUSE_CODE = "IDEMPOTENCY_KEY_REUSED";
+
+type IdempotentJobRecord = {
+  id: string;
+  inputRef: string | null;
+  status: string;
+};
 
 function getClientIp(request: NextRequest) {
   const forwardedFor = request.headers.get("x-forwarded-for");
@@ -61,6 +74,16 @@ async function parseJsonSafe(request: NextRequest) {
   }
 }
 
+function buildRequestFingerprint(request: CreateJobRequest) {
+  return createHash("sha256")
+    .update(JSON.stringify(request))
+    .digest("hex");
+}
+
+function hashIdempotencyKey(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function getIdempotencyKey(request: NextRequest) {
   const value = request.headers.get(IDEMPOTENCY_HEADER)?.trim();
 
@@ -83,6 +106,27 @@ function getIdempotencyKey(request: NextRequest) {
   }
 
   return value;
+}
+
+function parseCreateJobInput(payload: unknown): CreateJobRequest {
+  const parsed = createJobRequestSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    throw new ValidationError(
+      parsed.error.issues[0]?.message || "Invalid job request payload",
+      {
+        code: "INVALID_JOB_REQUEST",
+        logContext: {
+          details: parsed.error.issues.map((issue) => ({
+            message: issue.message,
+            path: issue.path.join("."),
+          })),
+        },
+      }
+    );
+  }
+
+  return parsed.data;
 }
 
 function buildActorWhere({
@@ -118,6 +162,7 @@ async function findIdempotentJob({
   return prisma.job.findFirst({
     select: {
       id: true,
+      inputRef: true,
       status: true,
     },
     where: {
@@ -126,7 +171,7 @@ async function findIdempotentJob({
         guestId,
         userId,
       }),
-    } as never,
+    },
   });
 }
 
@@ -141,8 +186,58 @@ function createDetailedErrorResponse(error: ValidationError | NotFoundError | Co
   });
 }
 
-function toCreateJobStatus(status: string): "pending" | "processing" {
-  return status === "RUNNING" ? "processing" : "pending";
+function getStoredRequestFingerprint(inputRef: string | null) {
+  if (!inputRef) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(inputRef) as {
+      requestFingerprint?: unknown;
+    };
+
+    return typeof parsed.requestFingerprint === "string"
+      ? parsed.requestFingerprint
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function assertReusableIdempotentJob(
+  job: IdempotentJobRecord,
+  requestFingerprint: string
+) {
+  const storedRequestFingerprint = getStoredRequestFingerprint(job.inputRef);
+
+  if (!storedRequestFingerprint || storedRequestFingerprint !== requestFingerprint) {
+    throw new ConflictError(
+      "Idempotency key is already associated with a different merge request.",
+      {
+        code: IDEMPOTENCY_REUSE_CODE,
+      }
+    );
+  }
+
+  switch (job.status) {
+    case "PENDING":
+      return "pending" as const;
+    case "RUNNING":
+      return "processing" as const;
+    case "FAILED":
+    case "CANCELED":
+    case "SUCCEEDED":
+      throw new ConflictError(
+        "Idempotency key is already associated with a completed merge job. Use a new key to retry.",
+        {
+          code: IDEMPOTENCY_REUSE_CODE,
+        }
+      );
+    default:
+      throw new InternalAppError("Unknown merge job status", {
+        code: "JOB_STATUS_UNSUPPORTED",
+      });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -176,10 +271,16 @@ export async function POST(request: NextRequest) {
   try {
     await assertJobCreateAllowed(rateLimitIdentity);
 
+    const payload = await parseJsonSafe(request);
+    const parsedInput = parseCreateJobInput(payload);
     const idempotencyKey = getIdempotencyKey(request);
+    const hashedIdempotencyKey = idempotencyKey
+      ? hashIdempotencyKey(idempotencyKey)
+      : undefined;
+    const requestFingerprint = buildRequestFingerprint(parsedInput);
     const existingJob = await findIdempotentJob({
       guestId,
-      idempotencyKey,
+      idempotencyKey: hashedIdempotencyKey,
       userId,
     });
 
@@ -187,7 +288,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           jobId: existingJob.id,
-          status: toCreateJobStatus(existingJob.status),
+          status: assertReusableIdempotentJob(existingJob, requestFingerprint),
         },
         {
           status: 201,
@@ -196,7 +297,7 @@ export async function POST(request: NextRequest) {
     }
 
     const validated = await parseAndValidateMergeJobInput(
-      await parseJsonSafe(request),
+      parsedInput,
       {
         guestId,
         userId,
@@ -218,15 +319,16 @@ export async function POST(request: NextRequest) {
           data: {
             fileObjectId: primaryFile.id,
             guestId: userId ? null : guestId ?? null,
-            idempotencyKey: idempotencyKey ?? null,
+            idempotencyKey: hashedIdempotencyKey ?? null,
             inputRef: JSON.stringify({
               inputFileIds: validated.inputFileIds,
               options: validated.options,
+              requestFingerprint,
             }),
             status: JOB_STATUS_PENDING,
             type: JOB_TYPE,
             userId: userId ?? null,
-          } as never,
+          },
           select: {
             id: true,
           },
@@ -239,7 +341,7 @@ export async function POST(request: NextRequest) {
             message: "Merge job created.",
             metadata: {
               fileCount: validated.inputFileIds.length,
-              idempotencyKey: idempotencyKey ?? null,
+              isIdempotent: Boolean(hashedIdempotencyKey),
               requestId: requestId ?? null,
             },
           },
@@ -277,13 +379,13 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       if (
-        idempotencyKey &&
+        hashedIdempotencyKey &&
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === "P2002"
       ) {
         const duplicateJob = await findIdempotentJob({
           guestId,
-          idempotencyKey,
+          idempotencyKey: hashedIdempotencyKey,
           userId,
         });
 
@@ -291,7 +393,10 @@ export async function POST(request: NextRequest) {
           return NextResponse.json(
             {
               jobId: duplicateJob.id,
-              status: toCreateJobStatus(duplicateJob.status),
+              status: assertReusableIdempotentJob(
+                duplicateJob,
+                requestFingerprint
+              ),
             },
             {
               status: 201,
