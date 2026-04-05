@@ -14,7 +14,15 @@ import {
 } from "@/lib/upload/s3Put";
 
 type PresignedUploaderProps = {
+  accept?: string;
+  allowDrop?: boolean;
+  description?: string;
+  helperText?: string;
   onComplete?: (completed: UploadedFileResult[]) => void;
+  selectLabel?: string;
+  title?: string;
+  validationMessage?: string;
+  validateFile?: (file: File) => boolean;
 };
 
 function formatBytes(bytes: number) {
@@ -51,12 +59,21 @@ function isPdf(file: File) {
 }
 
 export default function PresignedUploader({
+  accept = "application/pdf,.pdf",
+  allowDrop = false,
+  description = "Files upload sequentially so progress, cancelation, and verification stay predictable in the first release.",
+  helperText = "Uploads run one file at a time and return verified file IDs.",
   onComplete,
+  selectLabel = "Select PDFs",
+  title = "Upload large PDFs with visible progress.",
+  validationMessage = "Only PDF files can be uploaded.",
+  validateFile = isPdf,
 }: PresignedUploaderProps) {
   const [itemsById, setItemsById] = useState<Record<string, UploadItem>>({});
   const [itemOrder, setItemOrder] = useState<string[]>([]);
   const [completedFiles, setCompletedFiles] = useState<UploadedFileResult[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const itemIdsRef = useRef<string[]>([]);
@@ -116,19 +133,19 @@ export default function PresignedUploader({
     });
   };
 
-  const handleSelection = async (event: ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files ?? []);
-
-    event.target.value = "";
-
+  const beginUpload = async (selectedFiles: File[]) => {
     if (!selectedFiles.length) {
       return;
     }
 
-    const validFiles = selectedFiles.filter(isPdf);
+    if (isUploading || controllerRef.current) {
+      return;
+    }
+
+    const validFiles = selectedFiles.filter(validateFile);
 
     if (!validFiles.length || validFiles.length !== selectedFiles.length) {
-      setSelectionError("Only PDF files can be uploaded.");
+      setSelectionError(validationMessage);
       return;
     }
 
@@ -165,6 +182,14 @@ export default function PresignedUploader({
     }
   };
 
+  const handleSelection = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+
+    event.target.value = "";
+
+    await beginUpload(selectedFiles);
+  };
+
   const items = itemOrder
     .map((localId) => itemsById[localId])
     .filter((item): item is UploadItem => Boolean(item));
@@ -179,30 +204,83 @@ export default function PresignedUploader({
           </p>
           <div className="space-y-2">
             <h2 className="text-3xl font-black tracking-tight text-ink">
-              Upload large PDFs with visible progress.
+              {title}
             </h2>
             <p className="max-w-2xl text-sm leading-7 text-slate-600">
-              Files upload sequentially so progress, cancelation, and verification
-              stay predictable in the first release.
+              {description}
             </p>
           </div>
         </div>
 
-        <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-mist/80 p-5">
+        <div
+          className={`rounded-[1.5rem] border border-dashed p-5 transition ${
+            isDragActive
+              ? "border-signal bg-signal/10"
+              : "border-slate-300 bg-mist/80"
+          }`}
+          onDragEnter={
+            allowDrop && !isUploading
+              ? (event) => {
+                  event.preventDefault();
+                  setIsDragActive(true);
+                }
+              : undefined
+          }
+          onDragLeave={
+            allowDrop && !isUploading
+              ? (event) => {
+                  event.preventDefault();
+
+                  if (
+                    event.relatedTarget instanceof Node &&
+                    event.currentTarget.contains(event.relatedTarget)
+                  ) {
+                    return;
+                  }
+
+                  setIsDragActive(false);
+                }
+              : undefined
+          }
+          onDragOver={
+            allowDrop && !isUploading
+              ? (event) => {
+                  event.preventDefault();
+                  setIsDragActive(true);
+                }
+              : undefined
+          }
+          onDrop={
+            allowDrop && !isUploading
+              ? (event) => {
+                  event.preventDefault();
+                  setIsDragActive(false);
+                  void beginUpload(Array.from(event.dataTransfer.files ?? []));
+                }
+              : undefined
+          }
+        >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-base font-semibold text-ink">
-                Choose one or more PDF files
+                {allowDrop
+                  ? "Drag and drop PDFs or browse your device"
+                  : "Choose one or more PDF files"}
               </p>
               <p className="mt-1 text-sm text-slate-600">
-                Uploads run one file at a time and return verified file IDs.
+                {helperText}
               </p>
+              {allowDrop ? (
+                <p className="mt-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+                  {isUploading ? "Drop disabled during upload" : "Drop files anywhere in this panel"}
+                </p>
+              ) : null}
             </div>
 
             <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-slate-900">
-              <span>{isUploading ? "Uploading..." : "Select PDFs"}</span>
+              <span>{isUploading ? "Uploading..." : selectLabel}</span>
               <input
-                accept="application/pdf,.pdf"
+                accept={accept}
                 className="sr-only"
                 disabled={isUploading}
                 multiple

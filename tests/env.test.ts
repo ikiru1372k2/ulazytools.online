@@ -16,6 +16,8 @@ describe("server env schema", () => {
       FILE_RETENTION_HOURS: "168",
       METRICS_ENABLED: "false",
       REDIS_URL: "redis://localhost:6379",
+      RATE_LIMIT_JOB_CREATE_LIMIT: "10",
+      RATE_LIMIT_JOB_CREATE_WINDOW_SECONDS: "60",
       RATE_LIMIT_JOB_STATUS_LIMIT: "120",
       RATE_LIMIT_JOB_STATUS_WINDOW_SECONDS: "60",
       RATE_LIMIT_UPLOAD_PRESIGN_LIMIT: "20",
@@ -58,6 +60,7 @@ describe("server env schema", () => {
     expect(getQueueEnv().REDIS_URL).toBe("redis://localhost:6379");
     expect(getRetentionEnv().FILE_RETENTION_HOURS).toBe(168);
     expect(getRateLimitEnv().RATE_LIMIT_UPLOAD_PRESIGN_LIMIT).toBe(20);
+    expect(getRateLimitEnv().RATE_LIMIT_JOB_CREATE_LIMIT).toBe(10);
     expect(getStorageEnv().S3_FORCE_PATH_STYLE).toBe(true);
     expect(getUploadEnv().MAX_UPLOAD_MB).toBe(10);
   });
@@ -85,6 +88,7 @@ describe("server env schema", () => {
     expect(getStorageEnv().S3_ENDPOINT).toBeUndefined();
     expect(getStorageEnv().S3_FORCE_PATH_STYLE).toBe(false);
     expect(getRateLimitEnv().RATE_LIMIT_JOB_STATUS_WINDOW_SECONDS).toBe(60);
+    expect(getRateLimitEnv().RATE_LIMIT_JOB_CREATE_WINDOW_SECONDS).toBe(60);
     expect(getUploadEnv().PRESIGN_EXPIRES_SECONDS).toBe(60);
   });
 
@@ -129,6 +133,7 @@ describe("server env schema", () => {
     expect(getQueueEnv().CLEANUP_BATCH_SIZE).toBe(500);
     expect(getMetricsEnv().METRICS_ENABLED).toBe(false);
     expect(getRateLimitEnv().RATE_LIMIT_JOB_STATUS_LIMIT).toBe(120);
+    expect(getRateLimitEnv().RATE_LIMIT_JOB_CREATE_LIMIT).toBe(10);
     expect(getStorageEnv().S3_BUCKET).toBe("test-bucket");
     expect(getGuestEnv().GUEST_COOKIE_SECRET).toBe("test-guest-cookie-secret");
     expect(() => getAuthEnv()).toThrow(/invalid auth environment configuration/i);

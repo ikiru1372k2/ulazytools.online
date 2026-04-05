@@ -58,6 +58,8 @@ const retentionEnvSchema = z.object({
 });
 
 const rateLimitEnvSchema = z.object({
+  RATE_LIMIT_JOB_CREATE_LIMIT: z.coerce.number().int().positive(),
+  RATE_LIMIT_JOB_CREATE_WINDOW_SECONDS: z.coerce.number().int().positive(),
   RATE_LIMIT_JOB_STATUS_LIMIT: z.coerce.number().int().positive(),
   RATE_LIMIT_JOB_STATUS_WINDOW_SECONDS: z.coerce.number().int().positive(),
   RATE_LIMIT_UPLOAD_PRESIGN_LIMIT: z.coerce.number().int().positive(),

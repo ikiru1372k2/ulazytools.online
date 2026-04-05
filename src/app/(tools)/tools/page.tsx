@@ -23,8 +23,9 @@ const toolCards: ToolCard[] = [
     category: "Document transforms",
     description:
       "Upcoming PDF processing entry points will appear here as dedicated tool pages land.",
+    href: "/merge",
     name: "Merge and Organize PDFs",
-    status: "planned",
+    status: "shipped",
   },
   {
     category: "Extraction",

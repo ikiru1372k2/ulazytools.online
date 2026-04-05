@@ -12,6 +12,7 @@ import { buildObjectKey, buildObjectTags } from "@/lib/objectKey";
 import { uploadBuffer } from "@/lib/storage";
 
 import type { PdfJobPayload } from "@/lib/queue";
+import { mergePdfOptionsSchema } from "@/lib/jobs/merge";
 
 export type ProcessPdfJobResult = {
   outputKey: string;
@@ -22,6 +23,30 @@ const STUB_PDF_BYTES = Buffer.from(
   "%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n",
   "utf8"
 );
+
+function getRequestedOutputFilename(
+  inputRef: string | null,
+  fallbackFilename: string
+) {
+  if (!inputRef) {
+    return fallbackFilename;
+  }
+
+  try {
+    const parsed = JSON.parse(inputRef) as {
+      options?: unknown;
+    };
+    const options = mergePdfOptionsSchema.safeParse(parsed.options);
+
+    if (!options.success || !options.data.outputFilename) {
+      return fallbackFilename;
+    }
+
+    return options.data.outputFilename;
+  } catch {
+    return fallbackFilename;
+  }
+}
 
 export async function processPdfJob(
   payload: PdfJobPayload
@@ -79,9 +104,14 @@ export async function processPdfJob(
     },
     "Stub processing PDF job"
   );
+  const fallbackFilename = payload.type === "merge" ? "merged.pdf" : "processed.pdf";
+  const outputFilename = getRequestedOutputFilename(
+    dbJob.inputRef,
+    fallbackFilename
+  );
 
   const outputKey = buildObjectKey({
-    filename: "processed.pdf",
+    filename: outputFilename,
     guestId: dbJob.guestId,
     jobId: dbJob.id,
     kind: "output",

@@ -23,6 +23,7 @@ export type UploadedFileResult = {
   etag: string;
   fileId: string;
   filename: string;
+  objectKey: string;
 };
 
 type PresignResponse = {
@@ -32,6 +33,7 @@ type PresignResponse = {
   };
   fileId: string;
   headers?: Record<string, string>;
+  objectKey: string;
   uploadUrl: string;
 };
 
@@ -141,7 +143,7 @@ async function presignFile(
 
   const payload = await parseJsonSafe<PresignResponse>(response);
 
-  if (!response.ok || !payload?.fileId || !payload.uploadUrl) {
+  if (!response.ok || !payload?.fileId || !payload.objectKey || !payload.uploadUrl) {
     throw new Error(
       payload?.error?.message ||
         payload?.error?.code ||
@@ -152,6 +154,7 @@ async function presignFile(
   return {
     fileId: payload.fileId,
     headers: payload.headers,
+    objectKey: payload.objectKey,
     uploadUrl: payload.uploadUrl,
   };
 }
@@ -369,6 +372,7 @@ export function startPresignedUploads(
           etag: uploaded.etag,
           fileId: presigned.fileId,
           filename: item.file.name,
+          objectKey: presigned.objectKey,
         });
       } catch (error) {
         if (

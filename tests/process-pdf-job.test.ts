@@ -116,4 +116,38 @@ describe("processPdfJob", () => {
       userMessage: "Output object key is invalid",
     });
   });
+
+  it("writes a merge-specific output filename for merge jobs", async () => {
+    findUnique.mockResolvedValue({
+      guestId: null,
+      id: "job-merge",
+      inputRef: JSON.stringify({
+        options: {
+          outputFilename: "Quarterly Packet.pdf",
+        },
+        inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
+      }),
+      type: "merge",
+      userId: "user-123",
+    });
+    uploadBuffer.mockResolvedValue({
+      bucket: "test-bucket",
+      contentType: "application/pdf",
+      key: "outputs/job-merge/merged.pdf",
+      size: 0,
+    });
+
+    const { processPdfJob } = await import("@/server/jobs/processPdfJob");
+
+    await expect(
+      processPdfJob({
+        jobId: "job-merge",
+        requestId: "req-merge",
+        type: "merge",
+      })
+    ).resolves.toEqual({
+      outputKey: "outputs/job-merge/quarterly-packet.pdf",
+      userId: "user-123",
+    });
+  });
 });

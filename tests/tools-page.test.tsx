@@ -15,11 +15,14 @@ describe("ToolsPage", () => {
     expect(
       screen.getByRole("heading", { name: /pdf upload dashboard/i })
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open tool/i })).toHaveAttribute(
-      "href",
-      "/dashboard"
-    );
-    expect(screen.getAllByText(/coming soon/i)).toHaveLength(3);
+    expect(
+      screen.getByRole("heading", { name: /merge and organize pdfs/i })
+    ).toBeInTheDocument();
+    const links = screen.getAllByRole("link", { name: /open tool/i });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "/dashboard");
+    expect(links[1]).toHaveAttribute("href", "/merge");
+    expect(screen.getAllByText(/coming soon/i)).toHaveLength(2);
   });
 
   it("filters tool cards client-side", () => {
@@ -49,12 +52,13 @@ describe("ToolsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not render planned tools as active links", () => {
+  it("renders the merge tool as an active link", () => {
     render(<ToolsPage />);
 
-    expect(
-      screen.queryByRole("link", { name: /merge and organize pdfs/i })
-    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /open tool/i })[1]).toHaveAttribute(
+      "href",
+      "/merge"
+    );
     expect(
       screen.queryByRole("link", { name: /extract text and data/i })
     ).not.toBeInTheDocument();

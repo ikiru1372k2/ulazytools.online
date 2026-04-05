@@ -99,8 +99,11 @@ describe("/api/download/[jobId]", () => {
   });
 
   function buildJob(overrides: Record<string, unknown> = {}) {
+    const updatedAt = new Date();
+    const completedAt = new Date(updatedAt.getTime() - 60_000);
+
     return {
-      completedAt: new Date("2026-04-04T11:01:00.000Z"),
+      completedAt,
       fileObject: {
         originalName: "Original Report.pdf",
       },
@@ -108,7 +111,7 @@ describe("/api/download/[jobId]", () => {
       id: "job-123",
       outputRef: "outputs/job-123/processed.pdf",
       status: "SUCCEEDED",
-      updatedAt: new Date("2026-04-04T11:01:00.000Z"),
+      updatedAt,
       userId: "user-123",
       ...overrides,
     };

@@ -56,6 +56,21 @@ describe("pdf queue payload normalization", () => {
     });
   });
 
+  it("accepts merge as a supported PDF job type", async () => {
+    const { normalizePdfJobPayload } = await import("@/lib/queue");
+
+    expect(
+      normalizePdfJobPayload({
+        jobId: " job-merge ",
+        type: "merge",
+      })
+    ).toEqual({
+      jobId: "job-merge",
+      requestId: undefined,
+      type: "merge",
+    });
+  });
+
   it("registers the repeatable cleanup job using the configured schedule", async () => {
     const { CLEANUP_JOB_NAME, registerCleanupJob } = await import("@/lib/queue");
 

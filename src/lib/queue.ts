@@ -9,7 +9,7 @@ import { normalizeRequestId } from "@/lib/request-id";
 const queueEnv = getQueueEnv();
 
 export const PDF_QUEUE_NAME = "pdf-jobs";
-export const PDF_JOB_TYPES = ["process"] as const;
+export const PDF_JOB_TYPES = ["process", "merge"] as const;
 const PDF_JOB_TYPE_SET = new Set<string>(PDF_JOB_TYPES);
 export const CLEANUP_QUEUE_NAME = "cleanup-jobs";
 export const CLEANUP_JOB_NAME = "delete-expired-file-objects";
