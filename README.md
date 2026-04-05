@@ -247,8 +247,131 @@ After startup:
 
 - open `http://localhost:3000`
 - public marketing page is available at `/`
+- public tools catalog is available at `/tools`
+- public merge tool is available at `/merge`
 - protected app area starts at `/dashboard`
 - unauthenticated access to `/dashboard` redirects to `/login`
+
+If you also want retention cleanup running locally, start a third terminal:
+
+```powershell
+npm run cleanup:dev
+```
+
+```bash
+npm run cleanup:dev
+```
+
+## Local Access Map
+
+Use these URLs while the stack is running:
+
+- Web app: `http://localhost:3000`
+- Landing page: `http://localhost:3000/`
+- Tools hub: `http://localhost:3000/tools`
+- Merge PDFs tool: `http://localhost:3000/merge`
+- Login page: `http://localhost:3000/login`
+- Protected dashboard: `http://localhost:3000/dashboard`
+- Health endpoint: `http://localhost:3000/api/health`
+- Metrics endpoint: `http://localhost:3000/api/metrics`
+- MinIO API: `http://localhost:9000`
+- MinIO Console: `http://localhost:9001`
+- PostgreSQL: `localhost:5432`
+- Redis: `localhost:6379`
+
+## What To Expect
+
+### Terminal layout
+
+For normal local development, run:
+
+1. Infrastructure with `docker compose up -d`
+2. Web app with `npm run dev`
+3. PDF worker with `npm run worker:dev`
+4. Optional cleanup worker with `npm run cleanup:dev`
+
+Expected behavior:
+
+- the web app terminal shows Next.js startup logs and route compilation
+- the PDF worker terminal should start and wait for BullMQ jobs
+- the cleanup worker is optional for merge testing but useful for retention flows
+- if the PDF worker is not running, merge jobs can be created but will stay queued
+
+### Public user flows you can test
+
+#### Landing page
+
+Open `http://localhost:3000/`.
+
+What you should see:
+
+- public marketing-style homepage
+- navigation into the app and tool surfaces
+
+#### Tools hub
+
+Open `http://localhost:3000/tools`.
+
+What you should see:
+
+- catalog of shipped and planned tool flows
+- link to the Merge PDFs tool
+
+#### Merge PDFs tool
+
+Open `http://localhost:3000/merge`.
+
+What you should see:
+
+- drag-and-drop or file-picker PDF upload
+- upload progress for each selected PDF
+- merge action becomes available after at least two PDFs are verified
+- after submit, the page shows a job id and polls for job state
+- when the worker finishes, the page shows a download button for the merged PDF
+
+What happens behind the scenes:
+
+1. The browser requests presigned upload URLs from `/api/upload/presign`
+2. Uploaded PDFs are verified through `/api/upload/complete`
+3. The page creates a merge job through `POST /api/jobs/merge`
+4. Redis/BullMQ queues the `pdf.merge` job
+5. `src/workers/pdfWorker.ts` picks up the job
+6. The worker downloads PDFs from MinIO, merges them, uploads the result, and updates the `Job`
+7. The page polls `/api/jobs/[jobId]`
+8. The final download redirect is served through `/api/download/[jobId]`
+
+Common local merge expectations:
+
+- encrypted PDFs should fail with a safe message instead of crashing the worker
+- corrupt PDFs should fail with a safe parse-related message
+- if MinIO or Redis is down, upload or processing will fail
+- if the worker is stopped, the job status stays queued or pending
+
+#### Protected dashboard
+
+Open `http://localhost:3000/dashboard`.
+
+What you should see:
+
+- if not signed in, redirect to `/login`
+- if signed in with Google OAuth, access to the protected app area
+- dashboard-oriented upload/job tooling that exists separately from the public merge route
+
+## Local End-to-End Merge Smoke Test
+
+Use this sequence to confirm the app is fully working:
+
+1. Start Docker services with `docker compose up -d`
+2. Create the MinIO bucket `ulazy-pdf-dev`
+3. Start the web app with `npm run dev`
+4. Start the PDF worker with `npm run worker:dev`
+5. Open `http://localhost:3000/merge`
+6. Upload two valid PDFs
+7. Click `Start merge`
+8. Watch the job move from queued to processing to done
+9. Click `Download merged PDF`
+
+If this works, the main web, queue, storage, and worker pipeline is healthy.
 
 ## Testing and Verification
 
@@ -309,6 +432,7 @@ Expected result:
 
 - `npm run dev` starts the Next.js development server
 - `npm run worker:dev` starts the PDF worker with `.env.local`
+- `npm run cleanup:dev` starts the repeatable cleanup worker with `.env.local`
 - `npm run build` builds the Next.js app
 - `npm start` runs the production server
 - `npm test` runs Jest tests in band
@@ -416,6 +540,34 @@ Fix:
 - keep Redis running while testing worker flows
 - re-enqueue jobs after a Redis flush or restart
 
+### Merge jobs stay pending forever
+
+Symptoms:
+
+- upload succeeds
+- job id appears in `/merge`
+- status never reaches processing or done
+
+Fix:
+
+- confirm `npm run worker:dev` is running in a separate terminal
+- confirm Redis is healthy on `localhost:6379`
+- check the worker terminal for merge or storage errors
+
+### Merge upload succeeds but download never appears
+
+Symptoms:
+
+- files upload correctly
+- job starts but ends in failed state
+
+Fix:
+
+- verify the uploaded files are valid PDFs
+- check MinIO bucket existence and credentials
+- check the worker terminal for `PDF_ENCRYPTED`, `PDF_CORRUPT`, or storage-related failures
+- confirm MinIO is reachable on `http://localhost:9000`
+
 ## Apple Silicon Notes
 
 - This stack is Docker-friendly on Apple Silicon, but image pulls and native tooling can still vary by machine.
@@ -455,6 +607,8 @@ Keep server-only code under `src/server/` so it does not leak into client bundle
 ### Auth and route behavior
 
 - public landing page is `/`
+- public tools hub is `/tools`
+- public merge tool is `/merge`
 - sign-in page is `/login`
 - protected app area starts at `/dashboard`
 - middleware applies the early redirect behavior for `/dashboard`
