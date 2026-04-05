@@ -126,12 +126,13 @@ describe("MergePage", () => {
     fireEvent.click(screen.getByRole("button", { name: /start merge/i }));
 
     expect(mockCreateJob).toHaveBeenCalledWith({
-      inputKeys: ["uploads/first.pdf", "uploads/second.pdf"],
-      jobType: "merge",
+      inputFileIds: ["file-1", "file-2"],
+      jobType: "pdf.merge",
       options: {
-        includeBookmarks: false,
-        outputFilename: undefined,
+        pageOrder: [0, 1],
       },
+    }, {
+      idempotencyKey: expect.any(String),
     });
   });
 

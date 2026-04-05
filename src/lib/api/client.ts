@@ -23,12 +23,21 @@ async function parseJsonSafe<T>(response: Response): Promise<T | null> {
 
 export async function createJob(
   payload: CreateJobRequest,
-  fetchImpl: typeof fetch = fetch
+  options: {
+    fetchImpl?: typeof fetch;
+    idempotencyKey?: string;
+  } = {},
 ): Promise<CreateJobResponse> {
-  const response = await fetchImpl("/api/jobs", {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl("/api/jobs/merge", {
     body: JSON.stringify(payload),
     headers: {
       "content-type": "application/json",
+      ...(options.idempotencyKey
+        ? {
+            "Idempotency-Key": options.idempotencyKey,
+          }
+        : {}),
     },
     method: "POST",
   });
