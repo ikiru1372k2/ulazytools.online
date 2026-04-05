@@ -40,6 +40,10 @@ The API now returns errors in a shared JSON shape:
 - `JOB_NOT_FOUND`
 - `JOB_TYPE_MISMATCH`
 - `PDF_OUTPUT_WRITE_FAILED`
+- `PDF_INPUT_NOT_FOUND`
+- `PDF_ENCRYPTED`
+- `PDF_CORRUPT`
+- `PDF_MERGE_FAILED`
 
 ## Current route coverage
 

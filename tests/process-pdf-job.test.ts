@@ -1,5 +1,7 @@
 describe("processPdfJob", () => {
   const findUnique = jest.fn();
+  const findMany = jest.fn();
+  const mergePdf = jest.fn();
   const uploadBuffer = jest.fn();
   const info = jest.fn();
   const error = jest.fn();
@@ -7,6 +9,8 @@ describe("processPdfJob", () => {
   beforeEach(() => {
     jest.resetModules();
     findUnique.mockReset();
+    findMany.mockReset();
+    mergePdf.mockReset();
     uploadBuffer.mockReset();
     info.mockReset();
     error.mockReset();
@@ -28,10 +32,16 @@ describe("processPdfJob", () => {
 
     jest.doMock("@/lib/db", () => ({
       prisma: {
+        fileObject: {
+          findMany,
+        },
         job: {
           findUnique,
         },
       },
+    }));
+    jest.doMock("@/server/pdf/mergePdf", () => ({
+      mergePdf,
     }));
     jest.doMock("@/lib/storage", () => ({
       uploadBuffer,
@@ -117,7 +127,7 @@ describe("processPdfJob", () => {
     });
   });
 
-  it("writes the default merged output filename for pdf.merge jobs", async () => {
+  it("dispatches pdf.merge jobs to the merge processor", async () => {
     findUnique.mockResolvedValue({
       guestId: null,
       id: "job-merge",
@@ -130,11 +140,13 @@ describe("processPdfJob", () => {
       type: "pdf.merge",
       userId: "user-123",
     });
-    uploadBuffer.mockResolvedValue({
-      bucket: "test-bucket",
-      contentType: "application/pdf",
-      key: "outputs/job-merge/merged.pdf",
-      size: 0,
+    findMany.mockResolvedValue([
+      { id: "file-1", objectKey: "uploads/first.pdf" },
+      { id: "file-2", objectKey: "uploads/second.pdf" },
+    ]);
+    mergePdf.mockResolvedValue({
+      outputKey: "outputs/job-merge/merged.pdf",
+      userId: "user-123",
     });
 
     const { processPdfJob } = await import("@/server/jobs/processPdfJob");
@@ -148,6 +160,89 @@ describe("processPdfJob", () => {
     ).resolves.toEqual({
       outputKey: "outputs/job-merge/merged.pdf",
       userId: "user-123",
+    });
+    expect(mergePdf).toHaveBeenCalledWith({
+      guestId: null,
+      inputFiles: [
+        { fileId: "file-1", objectKey: "uploads/first.pdf" },
+        { fileId: "file-2", objectKey: "uploads/second.pdf" },
+      ],
+      jobId: "job-merge",
+      pageOrder: [0, 1],
+      requestId: "req-merge",
+      userId: "user-123",
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      select: {
+        id: true,
+        objectKey: true,
+      },
+      where: {
+        id: {
+          in: ["file-1", "file-2"],
+        },
+        mimeType: "application/pdf",
+        status: "READY",
+        userId: "user-123",
+      },
+    });
+  });
+
+  it("rejects persisted merge input with an invalid page order", async () => {
+    findUnique.mockResolvedValue({
+      guestId: null,
+      id: "job-merge",
+      inputRef: JSON.stringify({
+        options: {
+          pageOrder: [0, 0],
+        },
+        inputFileIds: ["file-1", "file-2"],
+      }),
+      type: "pdf.merge",
+      userId: "user-123",
+    });
+
+    const { processPdfJob } = await import("@/server/jobs/processPdfJob");
+
+    await expect(
+      processPdfJob({
+        jobId: "job-merge",
+        requestId: "req-merge",
+        type: "pdf.merge",
+      })
+    ).rejects.toMatchObject({
+      code: "INVALID_PAGE_ORDER",
+      userMessage: "Merge job page order is invalid.",
+    });
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects merge jobs whose input files are no longer ready and owned", async () => {
+    findUnique.mockResolvedValue({
+      guestId: null,
+      id: "job-merge",
+      inputRef: JSON.stringify({
+        options: {
+          pageOrder: [0, 1],
+        },
+        inputFileIds: ["file-1", "file-2"],
+      }),
+      type: "pdf.merge",
+      userId: "user-123",
+    });
+    findMany.mockResolvedValue([{ id: "file-1", objectKey: "uploads/first.pdf" }]);
+
+    const { processPdfJob } = await import("@/server/jobs/processPdfJob");
+
+    await expect(
+      processPdfJob({
+        jobId: "job-merge",
+        requestId: "req-merge",
+        type: "pdf.merge",
+      })
+    ).rejects.toMatchObject({
+      code: "PDF_INPUT_NOT_FOUND",
+      userMessage: "One or more PDFs are missing for this merge job.",
     });
   });
 });
