@@ -6,8 +6,6 @@ import { getQueueEnv } from "@/lib/env";
 import { incrementJobsCreatedCount } from "@/lib/metrics";
 import { normalizeRequestId } from "@/lib/request-id";
 
-const queueEnv = getQueueEnv();
-
 export const PDF_QUEUE_NAME = "pdf-jobs";
 export const PDF_JOB_TYPES = ["process", "merge"] as const;
 const PDF_JOB_TYPE_SET = new Set<string>(PDF_JOB_TYPES);
@@ -40,7 +38,7 @@ function getRedisOptions(): RedisOptions {
 }
 
 export function getRedisUrl() {
-  return queueEnv.REDIS_URL;
+  return getQueueEnv().REDIS_URL;
 }
 
 export function createRedisConnection() {
@@ -133,6 +131,8 @@ export async function enqueuePdfJob(payload: PdfJobPayload) {
 }
 
 export async function registerCleanupJob() {
+  const queueEnv = getQueueEnv();
+
   return getCleanupQueue().upsertJobScheduler(
     CLEANUP_JOB_NAME,
     {
