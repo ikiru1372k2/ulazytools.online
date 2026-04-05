@@ -3,7 +3,10 @@ import "server-only";
 import { createLogger } from "@/lib/logger";
 import { getSharedRedis } from "@/lib/redis";
 
-export type RateLimitAction = "job_status" | "upload_presign";
+export type RateLimitAction =
+  | "job_create"
+  | "job_status"
+  | "upload_presign";
 
 export type RateLimitIdentity = {
   guestId?: string;

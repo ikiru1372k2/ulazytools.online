@@ -25,7 +25,7 @@ describe("PresignedUploader", () => {
     const file = createFile("report.pdf");
     let runtime:
       | {
-          onBatchComplete?: (completed: Array<{ etag: string; fileId: string; filename: string }>) => void;
+          onBatchComplete?: (completed: Array<{ etag: string; fileId: string; filename: string; objectKey: string }>) => void;
           onItemUpdate?: (item: UploadItem) => void;
         }
       | undefined;
@@ -40,6 +40,7 @@ describe("PresignedUploader", () => {
             etag: "etag-1",
             fileId: "file-1",
             filename: "report.pdf",
+            objectKey: "uploads/report.pdf",
           },
         ]),
       };
@@ -76,6 +77,7 @@ describe("PresignedUploader", () => {
           etag: "etag-1",
           fileId: "file-1",
           filename: "report.pdf",
+          objectKey: "uploads/report.pdf",
         },
       ]);
     });
@@ -209,5 +211,30 @@ describe("PresignedUploader", () => {
     unmount();
 
     expect(cancel).toHaveBeenCalledWith("local-cleanup");
+  });
+
+  it("ignores dropped files while an upload batch is already running", () => {
+    mockStartPresignedUploads.mockImplementation(() => ({
+      cancel: jest.fn(),
+      promise: new Promise(() => {}),
+    }));
+
+    render(<PresignedUploader allowDrop />);
+
+    fireEvent.change(screen.getByLabelText(/select pdfs/i), {
+      target: { files: [createFile("first.pdf")] },
+    });
+
+    const panel = screen.getByText(/drag and drop pdfs or browse your device/i).closest("div");
+    expect(panel).not.toBeNull();
+
+    fireEvent.drop(panel as Element, {
+      dataTransfer: {
+        files: [createFile("second.pdf")],
+      },
+    });
+
+    expect(mockStartPresignedUploads).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/drop disabled during upload/i)).toBeInTheDocument();
   });
 });

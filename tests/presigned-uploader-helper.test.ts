@@ -69,6 +69,7 @@ describe("startPresignedUploads", () => {
           headers: {
             "content-type": "application/pdf",
           },
+          objectKey: "uploads/report.pdf",
           uploadUrl: "https://example.test/upload",
         })
       )
@@ -103,6 +104,7 @@ describe("startPresignedUploads", () => {
         etag: "etag-123",
         fileId: "file-123",
         filename: "report.pdf",
+        objectKey: "uploads/report.pdf",
       },
     ]);
 
@@ -140,6 +142,7 @@ describe("startPresignedUploads", () => {
         jsonResponse({
           fileId: "file-retry",
           headers: {},
+          objectKey: "uploads/retry.pdf",
           uploadUrl: "https://example.test/upload",
         })
       )
@@ -195,6 +198,7 @@ describe("startPresignedUploads", () => {
       jsonResponse({
         fileId: "file-cancel",
         headers: {},
+        objectKey: "uploads/cancel.pdf",
         uploadUrl: "https://example.test/upload",
       })
     );
@@ -265,6 +269,7 @@ describe("startPresignedUploads", () => {
       jsonResponse({
         fileId: "file-presign-cancel",
         headers: {},
+        objectKey: "uploads/presign-cancel.pdf",
         uploadUrl: "https://example.test/upload",
       })
     );
@@ -290,6 +295,7 @@ describe("startPresignedUploads", () => {
         jsonResponse({
           fileId: "file-1",
           headers: {},
+          objectKey: "uploads/first.pdf",
           uploadUrl: "https://example.test/upload-1",
         })
       )
@@ -298,6 +304,7 @@ describe("startPresignedUploads", () => {
         jsonResponse({
           fileId: "file-2",
           headers: {},
+          objectKey: "uploads/second.pdf",
           uploadUrl: "https://example.test/upload-2",
         })
       )
@@ -331,11 +338,13 @@ describe("startPresignedUploads", () => {
         etag: "etag-1",
         fileId: "file-1",
         filename: "first.pdf",
+        objectKey: "uploads/first.pdf",
       },
       {
         etag: "etag-2",
         fileId: "file-2",
         filename: "second.pdf",
+        objectKey: "uploads/second.pdf",
       },
     ]);
 

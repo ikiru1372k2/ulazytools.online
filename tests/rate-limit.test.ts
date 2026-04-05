@@ -38,6 +38,15 @@ describe("shared rate limiter", () => {
 
     expect(
       buildRateLimitKey(
+        { action: "job_create" },
+        {
+          ip: "203.0.113.10",
+          userId: "user-123",
+        }
+      )
+    ).toBe("rate_limit:job_create:user:dXNlci0xMjM:MjAzLjAuMTEzLjEw");
+    expect(
+      buildRateLimitKey(
         { action: "upload_presign" },
         {
           ip: "203.0.113.10",

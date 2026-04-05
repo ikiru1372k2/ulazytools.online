@@ -88,16 +88,19 @@ describe("/api/jobs/[jobId]", () => {
   });
 
   function buildJob(overrides: Record<string, unknown> = {}) {
+    const updatedAt = new Date();
+    const createdAt = new Date(updatedAt.getTime() - 60_000);
+
     return {
       completedAt: null,
-      createdAt: new Date("2026-04-04T11:00:00.000Z"),
+      createdAt,
       errorCode: null,
       errorMessage: null,
       guestId: null,
       id: "job-123",
       outputRef: null,
       status: "PENDING",
-      updatedAt: new Date("2026-04-04T11:01:00.000Z"),
+      updatedAt,
       userId: "user-123",
       ...overrides,
     };
@@ -213,6 +216,7 @@ describe("/api/jobs/[jobId]", () => {
 
     await expect(response.json()).resolves.toEqual({
       errorCode: "WorkerError",
+      lastError: "PDF processing failed.",
       status: "failed",
     });
   });
