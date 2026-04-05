@@ -22,9 +22,10 @@ const toolCards: ToolCard[] = [
   {
     category: "Document transforms",
     description:
-      "Upcoming PDF processing entry points will appear here as dedicated tool pages land.",
-    name: "Merge and Organize PDFs",
-    status: "planned",
+      "Public split workflow for one uploaded PDF, a typed ranges field, and background job progress.",
+    href: "/split",
+    name: "Split PDF by Ranges",
+    status: "shipped",
   },
   {
     category: "Extraction",

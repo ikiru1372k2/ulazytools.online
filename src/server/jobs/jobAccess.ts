@@ -27,7 +27,7 @@ export type SafeJobProjection =
   | { status: "pending" }
   | { status: "processing" }
   | { downloadUrl: string; status: "done" }
-  | { errorCode?: string; status: "failed" }
+  | { errorCode?: string; errorMessage?: string; status: "failed" }
   | { status: "canceled" };
 
 export function canAccessJob(
@@ -85,6 +85,7 @@ export async function toSafeJobProjection(
     case "FAILED":
       return {
         errorCode: job.errorCode ?? undefined,
+        errorMessage: job.errorMessage ?? undefined,
         status: "failed",
       };
     case "CANCELED":

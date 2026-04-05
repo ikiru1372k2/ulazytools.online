@@ -13,6 +13,7 @@ export type DoneJobStatus = {
 
 export type FailedJobStatus = {
   errorCode?: string;
+  errorMessage?: string;
   status: "failed";
 };
 

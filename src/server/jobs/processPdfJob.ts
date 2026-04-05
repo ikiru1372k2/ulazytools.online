@@ -68,6 +68,30 @@ export async function processPdfJob(
     );
   }
 
+  if (payload.type === "split_pdf_ranges") {
+    if (!payload.options?.ranges) {
+      throw new ValidationError("Split PDF jobs require page ranges.", {
+        code: "MISSING_SPLIT_RANGES",
+      });
+    }
+
+    if (!payload.inputKey) {
+      throw new ValidationError("Split PDF jobs require an input object key.", {
+        code: "MISSING_SPLIT_INPUT_KEY",
+      });
+    }
+
+    if (dbJob.inputRef && dbJob.inputRef !== payload.inputKey) {
+      throw new ValidationError(
+        `Job "${dbJob.id}" input key does not match the queued payload`,
+        {
+          code: "JOB_INPUT_MISMATCH",
+          httpStatus: 409,
+        }
+      );
+    }
+  }
+
   createLogger({
     jobId: dbJob.id,
     requestId: payload.requestId,
@@ -75,13 +99,15 @@ export async function processPdfJob(
   }).info(
     {
       hasInputRef: Boolean(dbJob.inputRef),
+      ranges: payload.options?.ranges,
       jobType: payload.type,
     },
     "Stub processing PDF job"
   );
 
   const outputKey = buildObjectKey({
-    filename: "processed.pdf",
+    filename:
+      payload.type === "split_pdf_ranges" ? "split-ranges.pdf" : "processed.pdf",
     guestId: dbJob.guestId,
     jobId: dbJob.id,
     kind: "output",

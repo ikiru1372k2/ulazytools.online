@@ -14,7 +14,13 @@ import {
 } from "@/lib/upload/s3Put";
 
 type PresignedUploaderProps = {
+  accept?: string;
+  allowMultiple?: boolean;
+  buttonLabel?: string;
+  description?: string;
+  helperText?: string;
   onComplete?: (completed: UploadedFileResult[]) => void;
+  title?: string;
 };
 
 function formatBytes(bytes: number) {
@@ -47,11 +53,20 @@ function getStatusLabel(item: UploadItem) {
 }
 
 function isPdf(file: File) {
-  return file.type === "application/pdf";
+  return (
+    file.type === "application/pdf" ||
+    file.name.trim().toLowerCase().endsWith(".pdf")
+  );
 }
 
 export default function PresignedUploader({
+  accept = "application/pdf,.pdf",
+  allowMultiple = true,
+  buttonLabel = "Select PDFs",
+  description = "Files upload sequentially so progress, cancelation, and verification stay predictable in the first release.",
+  helperText = "Uploads run one file at a time and return verified file IDs.",
   onComplete,
+  title = "Upload large PDFs with visible progress.",
 }: PresignedUploaderProps) {
   const [itemsById, setItemsById] = useState<Record<string, UploadItem>>({});
   const [itemOrder, setItemOrder] = useState<string[]>([]);
@@ -125,6 +140,11 @@ export default function PresignedUploader({
       return;
     }
 
+    if (!allowMultiple && selectedFiles.length > 1) {
+      setSelectionError("Choose a single PDF file to continue.");
+      return;
+    }
+
     const validFiles = selectedFiles.filter(isPdf);
 
     if (!validFiles.length || validFiles.length !== selectedFiles.length) {
@@ -179,11 +199,10 @@ export default function PresignedUploader({
           </p>
           <div className="space-y-2">
             <h2 className="text-3xl font-black tracking-tight text-ink">
-              Upload large PDFs with visible progress.
+              {title}
             </h2>
             <p className="max-w-2xl text-sm leading-7 text-slate-600">
-              Files upload sequentially so progress, cancelation, and verification
-              stay predictable in the first release.
+              {description}
             </p>
           </div>
         </div>
@@ -192,20 +211,22 @@ export default function PresignedUploader({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-base font-semibold text-ink">
-                Choose one or more PDF files
+                {allowMultiple
+                  ? "Choose one or more PDF files"
+                  : "Choose a PDF file"}
               </p>
               <p className="mt-1 text-sm text-slate-600">
-                Uploads run one file at a time and return verified file IDs.
+                {helperText}
               </p>
             </div>
 
             <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-ink px-5 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-slate-900">
-              <span>{isUploading ? "Uploading..." : "Select PDFs"}</span>
+              <span>{isUploading ? "Uploading..." : buttonLabel}</span>
               <input
-                accept="application/pdf,.pdf"
+                accept={accept}
                 className="sr-only"
                 disabled={isUploading}
-                multiple
+                multiple={allowMultiple}
                 onChange={handleSelection}
                 type="file"
               />

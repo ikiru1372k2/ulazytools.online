@@ -27,6 +27,22 @@ describe("metrics module", () => {
       METRICS_ENABLED: "false",
       NODE_ENV: "test",
     };
+    jest.doMock(
+      "pino",
+      () => {
+        const instance = {
+          child: jest.fn(),
+          debug: jest.fn(),
+          error: jest.fn(),
+          info: jest.fn(),
+          warn: jest.fn(),
+        };
+        instance.child.mockReturnValue(instance);
+        const pino = jest.fn(() => instance);
+        return { __esModule: true, default: pino };
+      },
+      { virtual: true }
+    );
   });
 
   it("increments counters and renders prometheus text in memory mode", async () => {

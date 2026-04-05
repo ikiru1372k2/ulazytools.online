@@ -46,8 +46,12 @@ jest.mock("next/server", () => ({
 }));
 
 describe("/api/download/[jobId]", () => {
+  const fixedNow = new Date("2026-04-04T12:00:00.000Z");
+
   beforeEach(() => {
     jest.resetModules();
+    jest.useFakeTimers();
+    jest.setSystemTime(fixedNow);
     auth.mockReset();
     findUnique.mockReset();
     createJobEvent.mockReset();
@@ -348,30 +352,23 @@ describe("/api/download/[jobId]", () => {
 
     const { GET } = await import("@/app/api/download/[jobId]/route");
 
-    const originalDateNow = Date.now;
-    Date.now = jest.fn(() => new Date("2026-04-04T12:00:00.000Z").getTime());
-
-    try {
-      const response = await GET(
-        {
-          cookies: {
-            get: jest.fn(),
-          },
-          headers: new Headers(),
-        } as never,
-        { params: { jobId: "job-123" } }
-      );
-
-      expect(response.status).toBe(410);
-      await expect(response.json()).resolves.toEqual({
-        error: {
-          code: "JOB_EXPIRED",
-          message: "Job output has expired",
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(),
         },
-      });
-    } finally {
-      Date.now = originalDateNow;
-    }
+        headers: new Headers(),
+      } as never,
+      { params: { jobId: "job-123" } }
+    );
+
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "JOB_EXPIRED",
+        message: "Job output has expired",
+      },
+    });
   });
 
   it("falls back to a safe filename when the original name is unavailable", async () => {
@@ -510,5 +507,9 @@ describe("/api/download/[jobId]", () => {
         message: "Unable to create download URL",
       },
     });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 });

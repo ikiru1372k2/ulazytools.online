@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  ApiClientError,
+  requestJson,
+  type CompleteUploadResponse,
+  type PresignUploadResponse,
+} from "@/lib/api/client";
+
 export type UploadStatus =
   | "queued"
   | "presigning"
@@ -23,27 +30,15 @@ export type UploadedFileResult = {
   etag: string;
   fileId: string;
   filename: string;
+  objectKey: string;
 };
 
 type PresignResponse = {
-  error?: {
-    code: string;
-    message: string;
-  };
   fileId: string;
   headers?: Record<string, string>;
+  objectKey: string;
   uploadUrl: string;
 };
-
-type CompleteResponse = {
-  error?: {
-    code: string;
-    message: string;
-  };
-  retryable?: boolean;
-};
-
-type FetchLike = typeof fetch;
 
 type XhrLike = Pick<
   XMLHttpRequest,
@@ -71,7 +66,14 @@ type UploadCallbacks = {
 };
 
 type UploadRuntime = UploadCallbacks & {
-  fetchImpl?: FetchLike;
+  completeUploadRequest?: (
+    fileId: string,
+    etag: string
+  ) => Promise<CompleteUploadResponse>;
+  createPresignedUploadRequest?: (
+    file: File
+  ) => Promise<PresignUploadResponse>;
+  fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   xhrFactory?: () => XhrLike;
 };
@@ -113,19 +115,37 @@ function normalizeEtag(etag: string) {
   return etag.trim().replace(/^"+|"+$/g, "");
 }
 
-async function parseJsonSafe<T>(response: Response): Promise<T | null> {
-  try {
-    return (await response.json()) as T;
-  } catch {
-    return null;
-  }
+function createPresignedUpload(file: File) {
+  return requestJson<PresignUploadResponse>("/api/upload/presign", {
+    body: JSON.stringify({
+      contentType: file.type || "application/pdf",
+      filename: file.name,
+      sizeBytes: file.size,
+    }),
+    headers: {
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
 }
 
-async function presignFile(
+function completePresignedUpload(fileId: string, etag: string) {
+  return requestJson<CompleteUploadResponse>("/api/upload/complete", {
+    body: JSON.stringify({
+      etag,
+      fileId,
+    }),
+    headers: {
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+}
+
+async function createPresignedUploadWithFetch(
   file: File,
-  fetchImpl: FetchLike,
-  signal: AbortSignal
-): Promise<PresignResponse> {
+  fetchImpl: typeof fetch
+) {
   const response = await fetchImpl("/api/upload/presign", {
     body: JSON.stringify({
       contentType: file.type || "application/pdf",
@@ -136,12 +156,18 @@ async function presignFile(
       "content-type": "application/json",
     },
     method: "POST",
-    signal,
   });
 
-  const payload = await parseJsonSafe<PresignResponse>(response);
+  const payload = (await response.json()) as
+    | (PresignUploadResponse & {
+        error?: {
+          code: string;
+          message: string;
+        };
+      })
+    | null;
 
-  if (!response.ok || !payload?.fileId || !payload.uploadUrl) {
+  if (!response.ok || !payload?.fileId || !payload.uploadUrl || !payload.objectKey) {
     throw new Error(
       payload?.error?.message ||
         payload?.error?.code ||
@@ -149,9 +175,63 @@ async function presignFile(
     );
   }
 
+  return payload;
+}
+
+async function completePresignedUploadWithFetch(
+  fileId: string,
+  etag: string,
+  fetchImpl: typeof fetch
+) {
+  const response = await fetchImpl("/api/upload/complete", {
+    body: JSON.stringify({
+      etag,
+      fileId,
+    }),
+    headers: {
+      "content-type": "application/json",
+    },
+    method: "POST",
+  });
+  const payload = (await response.json()) as
+    | ({
+        error?: {
+          code: string;
+          message: string;
+        };
+      } & CompleteUploadResponse)
+    | null;
+
+  if (!response.ok) {
+    const retryableError = new Error(
+      payload?.error?.message ||
+        payload?.error?.code ||
+        "Unable to verify upload"
+    ) as Error & { retryable?: boolean };
+    retryableError.retryable = Boolean(payload?.retryable);
+    throw retryableError;
+  }
+
+  return payload ?? {};
+}
+
+async function presignFile(
+  file: File,
+  createPresignedUploadRequest: (
+    file: File
+  ) => Promise<PresignUploadResponse>,
+  signal: AbortSignal
+): Promise<PresignResponse> {
+  if (signal.aborted) {
+    throw new DOMException("Upload canceled", "AbortError");
+  }
+
+  const payload = await createPresignedUploadRequest(file);
+
   return {
     fileId: payload.fileId,
     headers: payload.headers,
+    objectKey: payload.objectKey,
     uploadUrl: payload.uploadUrl,
   };
 }
@@ -228,43 +308,47 @@ function putObjectWithProgress(
 async function completeUpload(
   fileId: string,
   etag: string,
-  fetchImpl: FetchLike,
+  completeUploadRequest: (
+    fileId: string,
+    etag: string
+  ) => Promise<CompleteUploadResponse>,
   signal: AbortSignal
 ) {
-  const response = await fetchImpl("/api/upload/complete", {
-    body: JSON.stringify({
-      etag: normalizeEtag(etag),
-      fileId,
-    }),
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-    signal,
-  });
+  if (signal.aborted) {
+    throw new DOMException("Upload canceled", "AbortError");
+  }
 
-  const payload = await parseJsonSafe<CompleteResponse>(response);
+  try {
+    await completeUploadRequest(fileId, normalizeEtag(etag));
+  } catch (error) {
+    if (error instanceof ApiClientError) {
+      const retryableError = new Error(error.message) as Error & {
+        retryable?: boolean;
+      };
+      retryableError.retryable = false;
+      throw retryableError;
+    }
 
-  if (!response.ok) {
-    const message =
-      payload?.error?.message ||
-      payload?.error?.code ||
-      "Unable to verify upload";
-    const error = new Error(message) as Error & { retryable?: boolean };
-    error.retryable = Boolean(payload?.retryable);
-    throw error;
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new Error("Unable to verify upload");
   }
 }
 
 async function completeWithRetry(
   fileId: string,
   etag: string,
-  fetchImpl: FetchLike,
+  completeUploadRequest: (
+    fileId: string,
+    etag: string
+  ) => Promise<CompleteUploadResponse>,
   signal: AbortSignal,
   sleep: (ms: number) => Promise<void>
 ) {
   try {
-    await completeUpload(fileId, etag, fetchImpl, signal);
+    await completeUpload(fileId, etag, completeUploadRequest, signal);
   } catch (error) {
     const retryable =
       typeof error === "object" &&
@@ -282,7 +366,7 @@ async function completeWithRetry(
       throw new DOMException("Upload canceled", "AbortError");
     }
 
-    await completeUpload(fileId, etag, fetchImpl, signal);
+    await completeUpload(fileId, etag, completeUploadRequest, signal);
   }
 }
 
@@ -290,7 +374,17 @@ export function startPresignedUploads(
   files: File[],
   runtime: UploadRuntime = {}
 ): UploadController {
-  const fetchImpl = runtime.fetchImpl ?? fetch;
+  const createPresignedUploadRequest =
+    runtime.createPresignedUploadRequest ??
+    (runtime.fetchImpl
+      ? (file: File) => createPresignedUploadWithFetch(file, runtime.fetchImpl!)
+      : createPresignedUpload);
+  const completeUploadRequest =
+    runtime.completeUploadRequest ??
+    (runtime.fetchImpl
+      ? (fileId: string, etag: string) =>
+          completePresignedUploadWithFetch(fileId, etag, runtime.fetchImpl!)
+      : completePresignedUpload);
   const xhrFactory = runtime.xhrFactory ?? (() => new XMLHttpRequest());
   const sleep =
     runtime.sleep ??
@@ -326,7 +420,11 @@ export function startPresignedUploads(
         item.error = undefined;
         emit(item);
 
-        const presigned = await presignFile(item.file, fetchImpl, controller.signal);
+        const presigned = await presignFile(
+          item.file,
+          createPresignedUploadRequest,
+          controller.signal
+        );
 
         item.fileId = presigned.fileId;
 
@@ -357,7 +455,7 @@ export function startPresignedUploads(
         await completeWithRetry(
           presigned.fileId,
           uploaded.etag,
-          fetchImpl,
+          completeUploadRequest,
           controller.signal,
           sleep
         );
@@ -369,12 +467,10 @@ export function startPresignedUploads(
           etag: uploaded.etag,
           fileId: presigned.fileId,
           filename: item.file.name,
+          objectKey: presigned.objectKey,
         });
       } catch (error) {
-        if (
-          error instanceof DOMException &&
-          error.name === "AbortError"
-        ) {
+        if (error instanceof DOMException && error.name === "AbortError") {
           item.status = "canceled";
           item.error = undefined;
           emit(item);

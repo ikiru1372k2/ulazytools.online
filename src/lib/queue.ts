@@ -9,7 +9,7 @@ import { normalizeRequestId } from "@/lib/request-id";
 const queueEnv = getQueueEnv();
 
 export const PDF_QUEUE_NAME = "pdf-jobs";
-export const PDF_JOB_TYPES = ["process"] as const;
+export const PDF_JOB_TYPES = ["process", "split_pdf_ranges"] as const;
 const PDF_JOB_TYPE_SET = new Set<string>(PDF_JOB_TYPES);
 export const CLEANUP_QUEUE_NAME = "cleanup-jobs";
 export const CLEANUP_JOB_NAME = "delete-expired-file-objects";
@@ -17,7 +17,11 @@ export const CLEANUP_JOB_NAME = "delete-expired-file-objects";
 export type PdfJobType = (typeof PDF_JOB_TYPES)[number];
 
 export type PdfJobPayload = {
+  inputKey?: string;
   jobId: string;
+  options?: {
+    ranges?: string;
+  };
   requestId?: string;
   type: PdfJobType;
 };
@@ -94,7 +98,13 @@ export function getDefaultPdfJobOptions(): JobsOptions {
 export function normalizePdfJobPayload(payload: PdfJobPayload): PdfJobPayload {
   const normalizedRequestId = normalizeRequestId(payload.requestId);
   const normalizedPayload = {
+    inputKey: payload.inputKey?.trim() || undefined,
     jobId: payload.jobId.trim(),
+    options: payload.options?.ranges
+      ? {
+          ranges: payload.options.ranges.trim(),
+        }
+      : undefined,
     requestId: normalizedRequestId ? normalizedRequestId : undefined,
     type: payload.type,
   } satisfies PdfJobPayload;
@@ -105,6 +115,15 @@ export function normalizePdfJobPayload(payload: PdfJobPayload): PdfJobPayload {
 
   if (!PDF_JOB_TYPE_SET.has(normalizedPayload.type)) {
     throw new Error(`Unsupported PDF job type: ${normalizedPayload.type}`);
+  }
+
+  if (
+    normalizedPayload.type === "split_pdf_ranges" &&
+    (!normalizedPayload.inputKey || !normalizedPayload.options?.ranges)
+  ) {
+    throw new Error(
+      "split_pdf_ranges jobs require both inputKey and options.ranges"
+    );
   }
 
   return normalizedPayload;

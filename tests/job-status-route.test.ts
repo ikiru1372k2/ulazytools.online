@@ -34,8 +34,12 @@ jest.mock("next/server", () => ({
 }));
 
 describe("/api/jobs/[jobId]", () => {
+  const fixedNow = new Date("2026-04-04T12:00:00.000Z");
+
   beforeEach(() => {
     jest.resetModules();
+    jest.useFakeTimers();
+    jest.setSystemTime(fixedNow);
     auth.mockReset();
     findUnique.mockReset();
     info.mockReset();
@@ -213,6 +217,7 @@ describe("/api/jobs/[jobId]", () => {
 
     await expect(response.json()).resolves.toEqual({
       errorCode: "WorkerError",
+      errorMessage: "PDF processing failed.",
       status: "failed",
     });
   });
@@ -454,31 +459,24 @@ describe("/api/jobs/[jobId]", () => {
 
     const { GET } = await import("@/app/api/jobs/[jobId]/route");
 
-    const originalDateNow = Date.now;
-    Date.now = jest.fn(() => new Date("2026-04-04T12:00:00.000Z").getTime());
-
-    try {
-      const response = await GET(
-        {
-          cookies: {
-            get: jest.fn(),
-          },
-          headers: new Headers(),
-        } as never,
-        { params: { jobId: "job-123" } }
-      );
-
-      expect(response.status).toBe(410);
-      await expect(response.json()).resolves.toEqual({
-        error: {
-          code: "JOB_EXPIRED",
-          message: "Job output has expired",
+    const response = await GET(
+      {
+        cookies: {
+          get: jest.fn(),
         },
-      });
-      expect(response.headers.get("Cache-Control")).toBe("no-store");
-    } finally {
-      Date.now = originalDateNow;
-    }
+        headers: new Headers(),
+      } as never,
+      { params: { jobId: "job-123" } }
+    );
+
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "JOB_EXPIRED",
+        message: "Job output has expired",
+      },
+    });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
   it("returns 404 for a denied expired job", async () => {
@@ -646,5 +644,9 @@ describe("/api/jobs/[jobId]", () => {
       },
     });
     expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 });

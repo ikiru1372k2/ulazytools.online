@@ -25,7 +25,7 @@ describe("PresignedUploader", () => {
     const file = createFile("report.pdf");
     let runtime:
       | {
-          onBatchComplete?: (completed: Array<{ etag: string; fileId: string; filename: string }>) => void;
+          onBatchComplete?: (completed: Array<{ etag: string; fileId: string; filename: string; objectKey: string }>) => void;
           onItemUpdate?: (item: UploadItem) => void;
         }
       | undefined;
@@ -40,6 +40,7 @@ describe("PresignedUploader", () => {
             etag: "etag-1",
             fileId: "file-1",
             filename: "report.pdf",
+            objectKey: "uploads/2026/04/report.pdf",
           },
         ]),
       };
@@ -76,6 +77,7 @@ describe("PresignedUploader", () => {
           etag: "etag-1",
           fileId: "file-1",
           filename: "report.pdf",
+          objectKey: "uploads/2026/04/report.pdf",
         },
       ]);
     });
@@ -156,6 +158,29 @@ describe("PresignedUploader", () => {
     expect(screen.getByText(/only pdf files can be uploaded/i)).toBeInTheDocument();
   });
 
+  it("accepts a pdf filename even when the browser omits the mime type", () => {
+    const file = new File(["pdf"], "mobile-export.pdf", {
+      lastModified: 602,
+      type: "",
+    });
+
+    mockStartPresignedUploads.mockImplementation(() => ({
+      cancel: jest.fn(),
+      promise: Promise.resolve([]),
+    }));
+
+    render(<PresignedUploader />);
+
+    fireEvent.change(screen.getByLabelText(/select pdfs/i), {
+      target: { files: [file] },
+    });
+
+    expect(mockStartPresignedUploads).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText(/only pdf files can be uploaded/i)
+    ).not.toBeInTheDocument();
+  });
+
   it("rejects mixed selections instead of partially uploading them", () => {
     const validFile = createFile("valid.pdf");
     const invalidFile = new File(["text"], "notes.txt", {
@@ -171,6 +196,22 @@ describe("PresignedUploader", () => {
 
     expect(mockStartPresignedUploads).not.toHaveBeenCalled();
     expect(screen.getByText(/only pdf files can be uploaded/i)).toBeInTheDocument();
+  });
+
+  it("rejects multiple files when configured for single-file mode", () => {
+    const firstFile = createFile("first.pdf");
+    const secondFile = createFile("second.pdf");
+
+    render(<PresignedUploader allowMultiple={false} />);
+
+    fireEvent.change(screen.getByLabelText(/select pdf/i), {
+      target: { files: [firstFile, secondFile] },
+    });
+
+    expect(mockStartPresignedUploads).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/choose a single pdf file to continue/i)
+    ).toBeInTheDocument();
   });
 
   it("cancels tracked uploads on unmount", async () => {

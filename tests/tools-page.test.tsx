@@ -15,11 +15,11 @@ describe("ToolsPage", () => {
     expect(
       screen.getByRole("heading", { name: /pdf upload dashboard/i })
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open tool/i })).toHaveAttribute(
-      "href",
-      "/dashboard"
-    );
-    expect(screen.getAllByText(/coming soon/i)).toHaveLength(3);
+    expect(
+      screen.getByRole("heading", { name: /split pdf by ranges/i })
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /open tool/i })).toHaveLength(2);
+    expect(screen.getAllByText(/coming soon/i)).toHaveLength(2);
   });
 
   it("filters tool cards client-side", () => {

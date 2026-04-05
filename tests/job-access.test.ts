@@ -141,6 +141,7 @@ describe("job access helpers", () => {
       })
     ).resolves.toEqual({
       errorCode: "WorkerError",
+      errorMessage: "PDF processing failed.",
       status: "failed",
     });
   });
